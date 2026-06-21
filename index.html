@@ -7,11 +7,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Kannada:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   :root {
     --bg:#14181d; --panel:#1c2128; --panel-2:#232a32; --line:#2e3742;
     --ink:#e7edf3; --muted:#93a1b0; --accent:#4f9d8f; --accent-ink:#0c1512;
-    --pass:#3fa66a; --fail:#c4615a; --warn:#d9a441;
+    --pass:#3fa66a; --fail:#c4615a; --warn:#d9a441; --ignore:#7d8aa0;
     --radius:10px;
     --kn:"Noto Sans Kannada","Inter",system-ui,sans-serif;
     --ui:"Inter",system-ui,sans-serif;
@@ -31,6 +32,7 @@
   .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);}
   .btn.pass{background:var(--pass);color:#06140c;border-color:var(--pass);}
   .btn.fail{background:transparent;color:var(--fail);border-color:var(--fail);}
+  .btn.ghost{background:transparent;color:var(--muted);}
   .btn:disabled{opacity:.5;cursor:not-allowed;}
 
   .auth-wrap{min-height:100vh;display:grid;place-items:center;padding:24px;}
@@ -45,7 +47,6 @@
   .msg{font-size:13px;margin-top:12px;min-height:18px;}
   .msg.err{color:var(--fail);} .msg.ok{color:var(--pass);}
 
-  /* menu */
   .menu-wrap{max-width:640px;margin:40px auto;padding:0 20px;}
   .menu-wrap h2{font-size:18px;margin:0 0 4px;}
   .menu-wrap .sub{color:var(--muted);font-size:14px;margin:0 0 26px;}
@@ -56,7 +57,7 @@
   .choice b{display:block;font-size:15px;margin-bottom:3px;}
   .choice span{font-size:12px;color:var(--muted);}
   .choice.sel{border-color:var(--accent);background:var(--panel-2);box-shadow:inset 0 0 0 1px var(--accent);}
-  .start-row{margin-top:6px;}
+  .start-row{display:flex;gap:12px;margin-top:6px;}
 
   .toolbar{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--panel);}
   .count{font-size:13px;color:var(--muted);}
@@ -69,8 +70,8 @@
   .chip{font-size:11px;padding:3px 9px;border-radius:99px;background:var(--bg);border:1px solid var(--line);color:var(--muted);}
   .card-body{padding:16px;display:grid;gap:14px;}
   .qfield label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;}
-  .qfield textarea,.qfield input{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:10px 12px;font-size:15px;resize:vertical;}
-  .qfield textarea{min-height:54px;line-height:1.6;}
+  .qfield textarea,.qfield input{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:10px 12px;font-size:15px;}
+  .qfield textarea{min-height:48px;line-height:1.6;overflow:hidden;resize:none;}
   .qfield textarea:focus,.qfield input:focus{outline:none;border-color:var(--accent);}
   .qfield.dirty textarea,.qfield.dirty input{border-color:var(--warn);}
   .ro{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;white-space:pre-wrap;}
@@ -80,9 +81,30 @@
   .card-foot .spacer{flex:1;}
   .save-note{font-size:12px;color:var(--muted);}
 
+  /* dashboard */
+  .dash-wrap{max-width:1000px;margin:0 auto;padding:20px;display:grid;gap:18px;}
+  .dash-controls{display:flex;align-items:center;gap:12px;}
+  .dash-title{font-weight:600;font-size:16px;}
+  .stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+  .stat-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;}
+  .stat-card h4{margin:0 0 12px;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600;}
+  .stat-row{display:flex;align-items:center;justify-content:space-between;padding:5px 0;}
+  .stat-row .k{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:7px;}
+  .dot{width:9px;height:9px;border-radius:99px;display:inline-block;}
+  .stat-row .v{font-size:17px;font-weight:600;font-variant-numeric:tabular-nums;}
+  .chart-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;}
+  .chart-card h4{margin:0 0 14px;font-size:13px;color:var(--muted);font-weight:600;}
+  .chart-box{position:relative;height:300px;}
+  .split-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .split-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;}
+  .split-card h4{margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:600;}
+  .mini{display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);font-size:14px;}
+  .mini:first-of-type{border-top:none;}
+  .mini b{font-variant-numeric:tabular-nums;}
+
   .empty,.loading{text-align:center;color:var(--muted);padding:60px 20px;}
   .hidden{display:none!important;}
-  @media (max-width:560px){.choices{grid-template-columns:1fr;}.list{padding:14px;}.toolbar{flex-wrap:wrap;}}
+  @media (max-width:640px){.choices{grid-template-columns:1fr;}.stat-grid{grid-template-columns:1fr;}.split-grid{grid-template-columns:1fr;}.list{padding:14px;}.toolbar{flex-wrap:wrap;}}
 </style>
 </head>
 <body>
@@ -122,7 +144,7 @@
   </header>
   <div class="menu-wrap">
     <h2>What do you want to review?</h2>
-    <p class="sub">Pick a content type and a source, then start.</p>
+    <p class="sub">Pick a content type and a source, then start — or open the dashboard.</p>
 
     <div class="group">
       <div class="glabel">Content</div>
@@ -142,6 +164,7 @@
 
     <div class="start-row">
       <button class="btn primary" id="startBtn" disabled>Start reviewing</button>
+      <button class="btn" id="openDashBtn">📊 Open dashboard</button>
     </div>
   </div>
 </div>
@@ -151,6 +174,7 @@
   <header>
     <span class="brand">Spardha On <small>QC Console</small></span>
     <button class="btn" id="changeBtn">Change queue</button>
+    <button class="btn" id="dashFromApp">Dashboard</button>
     <span class="spacer"></span>
     <span class="who" id="who"></span>
     <button class="btn" id="signOut">Sign out</button>
@@ -164,6 +188,34 @@
   <div class="list" id="list"><div class="loading">Loading…</div></div>
 </div>
 
+<!-- ========== DASHBOARD ========== -->
+<div id="dashView" class="hidden">
+  <header>
+    <span class="brand">Spardha On <small>QC Console</small></span>
+    <button class="btn" id="backFromDash">← Back to menu</button>
+    <span class="spacer"></span>
+    <span class="who" id="whoDash"></span>
+    <button class="btn" id="signOutDash">Sign out</button>
+  </header>
+  <div class="dash-wrap">
+    <div class="dash-controls">
+      <span class="dash-title">QC activity</span>
+      <button class="btn" id="dashRefresh">Refresh</button>
+      <span class="spacer"></span>
+      <span class="count" id="dashRange"></span>
+    </div>
+    <div class="stat-grid" id="statGrid"></div>
+    <div class="chart-card">
+      <h4>Daily decisions — last 30 days</h4>
+      <div class="chart-box"><canvas id="trendChart"></canvas></div>
+    </div>
+    <div class="split-grid">
+      <div class="split-card" id="byTypeCard"></div>
+      <div class="split-card" id="byMemberCard"></div>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -172,7 +224,7 @@ const SUPABASE_URL  = "https://blnnrlawwtygyrgugppr.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJsbm5ybGF3d3R5Z3lyZ3VncHByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzNDQ1MjMsImV4cCI6MjA5MzkyMDUyM30.2EQqGeHbvFdgZkfHYbsbEvYYzJitGU8wX5vzJOHpIKU";
 /* ================================= */
 
-/* Queue definitions keyed by content+source */
+
 const SCHEMAS = {
   "mcq:generated": {
     label: "Generated MCQs · pending human QC",
@@ -192,7 +244,7 @@ const SCHEMAS = {
     context: [["subject_name","Subject"],["category","Category"]],
     fields: [
       ["topic_name","Topic (ವಿಷಯ)","text"],
-      ["explanation","Explanation (ವಿವರಣೆ)","big"],
+      ["explanation","Explanation (ವಿವರಣೆ)","textarea"],
     ],
   },
   "mcq:reported": {
@@ -218,13 +270,14 @@ const MEMBER_COL = "qc_member";
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth:{ persistSession:true, autoRefreshToken:true }});
 const $ = (id)=>document.getElementById(id);
-const authView=$("authView"), menuView=$("menuView"), appView=$("appView");
+const authView=$("authView"), menuView=$("menuView"), appView=$("appView"), dashView=$("dashView");
 const emailMsg=$("emailMsg"), codeMsg=$("codeMsg");
 
 let reviewerEmail = "";
 let currentEmail = "";
 let pick = { content:null, source:null };
 let activeKey = null;
+let trendChart = null;
 
 /* ---------- AUTH ---------- */
 $("sendBtn").onclick = async () => {
@@ -247,8 +300,8 @@ $("verifyBtn").onclick = async () => {
   if(error) return setMsg(codeMsg,error.message,"err");
 };
 $("backLink").onclick=(e)=>{e.preventDefault();$("stepCode").classList.add("hidden");$("stepEmail").classList.remove("hidden");setMsg(codeMsg,"");setMsg(emailMsg,"");};
-$("signOut").onclick=async()=>{await sb.auth.signOut();};
-$("signOutMenu").onclick=async()=>{await sb.auth.signOut();};
+const doSignOut=async()=>{await sb.auth.signOut();};
+$("signOut").onclick=doSignOut; $("signOutMenu").onclick=doSignOut; $("signOutDash").onclick=doSignOut;
 $("email").addEventListener("keydown",(e)=>{if(e.key==="Enter")$("sendBtn").click();});
 $("code").addEventListener("keydown",(e)=>{if(e.key==="Enter")$("verifyBtn").click();});
 function setMsg(el,t,k){el.textContent=t||"";el.className="msg"+(k?" "+k:"");}
@@ -256,16 +309,17 @@ function setMsg(el,t,k){el.textContent=t||"";el.className="msg"+(k?" "+k:"");}
 sb.auth.onAuthStateChange((_e,session)=>{ session?.user ? onLogin(session.user) : showAuth(); });
 (async()=>{ const {data}=await sb.auth.getSession(); data.session?.user ? onLogin(data.session.user) : showAuth(); })();
 
-function showAuth(){menuView.classList.add("hidden");appView.classList.add("hidden");authView.classList.remove("hidden");}
+function hideAll(){[authView,menuView,appView,dashView].forEach(v=>v.classList.add("hidden"));}
+function showAuth(){hideAll();authView.classList.remove("hidden");}
 function onLogin(user){
   reviewerEmail=user.email;
-  $("who").textContent=user.email; $("whoMenu").textContent=user.email;
+  $("who").textContent=user.email; $("whoMenu").textContent=user.email; $("whoDash").textContent=user.email;
   showMenu();
 }
 
 /* ---------- MENU ---------- */
 function showMenu(){
-  authView.classList.add("hidden"); appView.classList.add("hidden"); menuView.classList.remove("hidden");
+  hideAll(); menuView.classList.remove("hidden");
   pick={content:null,source:null}; activeKey=null;
   document.querySelectorAll(".choice").forEach(c=>c.classList.remove("sel"));
   $("startBtn").disabled=true;
@@ -283,11 +337,15 @@ function mark(kind,btn){
 }
 $("startBtn").onclick=()=>{
   activeKey = pick.content+":"+pick.source;
-  menuView.classList.add("hidden"); appView.classList.remove("hidden");
+  hideAll(); appView.classList.remove("hidden");
   loadList();
 };
 $("changeBtn").onclick=showMenu;
 $("refreshBtn").onclick=loadList;
+$("openDashBtn").onclick=showDashboard;
+$("dashFromApp").onclick=showDashboard;
+$("backFromDash").onclick=showMenu;
+$("dashRefresh").onclick=loadDashboard;
 
 /* ---------- LOAD QUEUE ---------- */
 async function loadList(){
@@ -295,7 +353,7 @@ async function loadList(){
   $("queueName").textContent=sch.label;
   const list=$("list"); list.innerHTML='<div class="loading">Loading…</div>'; $("count").textContent="";
   let q = sb.from(sch.table).select("*").order(sch.pk,{ascending:true}).limit(50);
-  if(sch.kind==="generated") q = q.is(HUMAN_STATUS, null);   // pending human QC only
+  if(sch.kind==="generated") q = q.is(HUMAN_STATUS, null);
   const { data, error } = await q;
   if(error){
     list.innerHTML='<div class="empty">Could not load: '+esc(error.message)+'<br><br>Likely an RLS read policy on '+esc(sch.table)+'.</div>';
@@ -304,10 +362,17 @@ async function loadList(){
   $("count").textContent=data.length+(sch.kind==="generated"?" pending":" reports");
   if(!data.length){ list.innerHTML='<div class="empty">Nothing here. 🎉</div>'; return; }
   list.innerHTML="";
-  data.forEach(row=> list.appendChild(sch.kind==="generated"?genCard(sch,row):repCard(sch,row)) );
+  data.forEach(row=>{
+    const card = sch.kind==="generated" ? genCard(sch,row) : repCard(sch,row);
+    list.appendChild(card);
+    card.querySelectorAll("textarea").forEach(autoGrow);  // fit content after layout
+  });
 }
 
-/* ---------- GENERATED CARD (editable + Pass/Fail) ---------- */
+/* ---------- AUTO-GROW TEXTAREAS ---------- */
+function autoGrow(t){ t.style.height="auto"; t.style.height=(t.scrollHeight+2)+"px"; }
+
+/* ---------- GENERATED CARD ---------- */
 function genCard(sch,row){
   const card=el("div","card");
   const head=el("div","card-head");
@@ -321,41 +386,45 @@ function genCard(sch,row){
     const wrap=el("div","qfield");
     const lab=document.createElement("label"); lab.textContent=label; wrap.appendChild(lab);
     let inp;
-    if(type==="textarea"||type==="big"){ inp=document.createElement("textarea"); if(type==="big") inp.style.minHeight="160px"; }
+    if(type==="textarea"){ inp=document.createElement("textarea"); }
     else { inp=document.createElement("input"); inp.type="text"; }
     inp.classList.add("kn"); inp.value=row[k]??"";
-    inp.addEventListener("input",()=>wrap.classList.toggle("dirty", inp.value!==(row[k]??"")));
+    if(type==="textarea") inp.addEventListener("input",()=>{ autoGrow(inp); wrap.classList.toggle("dirty", inp.value!==(row[k]??"")); });
+    else inp.addEventListener("input",()=>wrap.classList.toggle("dirty", inp.value!==(row[k]??"")));
     inputs[k]=inp; wrap.appendChild(inp); body.appendChild(wrap);
   });
-  // human QC comment
   const cwrap=el("div","qfield");
   const clab=document.createElement("label"); clab.textContent="QC comment (optional)"; cwrap.appendChild(clab);
   const comment=document.createElement("textarea"); comment.classList.add("kn"); comment.value=row[HUMAN_COMMENT]??"";
+  comment.addEventListener("input",()=>autoGrow(comment));
   cwrap.appendChild(comment); body.appendChild(cwrap);
   card.appendChild(body);
 
   const foot=el("div","card-foot");
   const passBtn=mkBtn("Pass ✓","btn pass");
   const failBtn=mkBtn("Needs fix ✗","btn fail");
+  const ignoreBtn=mkBtn("Ignore","btn ghost");
   const note=span("save-note","");
   const collect=()=>{ const p={}; sch.fields.forEach(([k])=>p[k]=inputs[k].value); return p; };
 
-  passBtn.onclick=async()=>decide(true);
-  failBtn.onclick=async()=>decide(false);
-  async function decide(status){
+  passBtn.onclick=()=>decide(true,"approved");
+  failBtn.onclick=()=>decide(false,"rejected");
+  ignoreBtn.onclick=async()=>{ await logAction(sch,row,"ignored"); note.textContent="Ignored."; removeCard(card,sch); };
+  async function decide(status,action){
     const patch=collect();
-    patch[HUMAN_STATUS]=status;
-    patch[HUMAN_COMMENT]=comment.value;
-    patch[MEMBER_COL]=reviewerEmail;
-    if(await save(sch,row,patch,note,[passBtn,failBtn], status?"Passed.":"Marked for fix.")) removeCard(card,sch);
+    patch[HUMAN_STATUS]=status; patch[HUMAN_COMMENT]=comment.value; patch[MEMBER_COL]=reviewerEmail;
+    if(await save(sch,row,patch,note,[passBtn,failBtn,ignoreBtn], status?"Passed.":"Marked for fix.")){
+      await logAction(sch,row,action);
+      removeCard(card,sch);
+    }
   }
-  foot.appendChild(passBtn); foot.appendChild(failBtn);
+  foot.appendChild(passBtn); foot.appendChild(failBtn); foot.appendChild(ignoreBtn);
   foot.appendChild(span("spacer","")); foot.appendChild(note);
   card.appendChild(foot);
   return card;
 }
 
-/* ---------- REPORTED CARD (read + dismiss) ---------- */
+/* ---------- REPORTED CARD ---------- */
 function repCard(sch,row){
   const card=el("div","card");
   const head=el("div","card-head");
@@ -364,13 +433,11 @@ function repCard(sch,row){
   card.appendChild(head);
 
   const body=el("div","card-body");
-  // complaint first, highlighted
   const [ck,cl]=sch.complaint;
   const comp=el("div","qfield complaint");
   const compLab=document.createElement("label"); compLab.textContent=cl; comp.appendChild(compLab);
   const compBox=el("div","ro kn"); compBox.textContent=row[ck]??""; comp.appendChild(compBox);
   body.appendChild(comp);
-  // reported content read-only
   sch.show.forEach(([k,l])=>{
     if(row[k]==null||row[k]==="") return;
     const w=el("div","qfield");
@@ -391,6 +458,7 @@ function repCard(sch,row){
     dismissBtn.disabled=true; note.textContent="Deleting…";
     const { error } = await sb.from(sch.table).delete().eq(sch.pk,row[sch.pk]);
     if(error){ dismissBtn.disabled=false; armed=false; note.textContent="Error: "+error.message; note.style.color="var(--fail)"; return; }
+    await logAction(sch,row,"dismissed");
     removeCard(card,sch);
   };
   foot.appendChild(dismissBtn);
@@ -399,12 +467,21 @@ function repCard(sch,row){
   return card;
 }
 
+/* ---------- SAVE + LOG ---------- */
 async function save(sch,row,patch,note,btns,okText){
   btns.forEach(b=>b.disabled=true); note.textContent="Saving…"; note.style.color="var(--muted)";
   const { error } = await sb.from(sch.table).update(patch).eq(sch.pk,row[sch.pk]);
   btns.forEach(b=>b.disabled=false);
   if(error){ note.textContent="Error: "+error.message; note.style.color="var(--fail)"; return false; }
   note.textContent=okText||"Saved."; note.style.color="var(--pass)"; return true;
+}
+async function logAction(sch,row,action){
+  const [content_type,source]=activeKey.split(":");
+  try{
+    await sb.from("qc_actions").insert({
+      content_type, source, row_id: row[sch.pk], action, qc_member: reviewerEmail
+    });
+  }catch(e){ /* logging failure shouldn't block the reviewer */ }
 }
 function removeCard(card,sch){
   card.style.transition="opacity .25s"; card.style.opacity="0";
@@ -413,6 +490,122 @@ function removeCard(card,sch){
     $("count").textContent=left+(sch.kind==="generated"?" pending":" reports");
     if(!left) $("list").innerHTML='<div class="empty">Nothing here. 🎉</div>';
   },250);
+}
+
+/* ============================================================
+   DASHBOARD
+   ============================================================ */
+const ACTION_META = {
+  approved:{label:"Approved", color:"#3fa66a"},
+  rejected:{label:"Rejected", color:"#c4615a"},
+  ignored: {label:"Ignored",  color:"#7d8aa0"},
+  dismissed:{label:"Dismissed", color:"#d9a441"},
+};
+
+function showDashboard(){ hideAll(); dashView.classList.remove("hidden"); loadDashboard(); }
+
+async function loadDashboard(){
+  $("statGrid").innerHTML='<div class="loading" style="grid-column:1/-1">Loading…</div>';
+  $("dashRange").textContent="";
+  const sinceISO = new Date(Date.now()-30*864e5).toISOString();
+  const { data, error } = await sb.from("qc_actions").select("*").gte("created_at", sinceISO).order("created_at",{ascending:true}).limit(5000);
+  if(error){
+    $("statGrid").innerHTML='<div class="empty" style="grid-column:1/-1">Could not load: '+esc(error.message)+'</div>';
+    return;
+  }
+  renderDashboard(data||[]);
+}
+
+function dayKey(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+
+function renderDashboard(rows){
+  const now=Date.now();
+  const startToday=new Date(); startToday.setHours(0,0,0,0);
+  const weekAgo=now-7*864e5, monthAgo=now-30*864e5;
+
+  const blank=()=>({approved:0,rejected:0,ignored:0,dismissed:0});
+  const today=blank(), week=blank(), month=blank();
+  const byType={ mcq:blank(), notes:blank() };
+  const byMember={};
+  const daily={};                    // dayKey -> {approved,rejected,ignored}
+
+  rows.forEach(r=>{
+    const t=new Date(r.created_at).getTime();
+    const a=r.action; if(!(a in today)) return;
+    if(t>=monthAgo){ month[a]++; }
+    if(t>=weekAgo){ week[a]++; }
+    if(t>=startToday.getTime()){ today[a]++; }
+    if(r.content_type in byType) byType[r.content_type][a]++;
+    const m=r.qc_member||"unknown"; (byMember[m]=byMember[m]||blank())[a]++;
+    const k=dayKey(new Date(r.created_at));
+    (daily[k]=daily[k]||{approved:0,rejected:0,ignored:0})[a] = (daily[k][a]||0) + (a==="dismissed"?0:1);
+  });
+
+  $("dashRange").textContent=rows.length+" actions · last 30 days";
+
+  // stat cards
+  const sg=$("statGrid"); sg.innerHTML="";
+  sg.appendChild(statCard("Today", today));
+  sg.appendChild(statCard("Last 7 days", week));
+  sg.appendChild(statCard("Last 30 days", month));
+
+  // by type
+  const tc=$("byTypeCard"); tc.innerHTML="<h4>By content type · last 30 days</h4>";
+  ["mcq","notes"].forEach(ct=>{
+    const s=byType[ct]; const total=s.approved+s.rejected+s.ignored+s.dismissed;
+    tc.appendChild(miniRow(ct==="mcq"?"MCQs":"Study Notes", `${total}  ·  ✓${s.approved} ✗${s.rejected} –${s.ignored}`));
+  });
+
+  // by member
+  const mc=$("byMemberCard"); mc.innerHTML="<h4>By reviewer · last 30 days</h4>";
+  const members=Object.entries(byMember).sort((a,b)=>(sum(b[1])-sum(a[1])));
+  if(!members.length) mc.appendChild(miniRow("—","no activity"));
+  members.forEach(([m,s])=> mc.appendChild(miniRow(m, `${sum(s)}  ·  ✓${s.approved} ✗${s.rejected} –${s.ignored}`)));
+
+  // chart: last 30 days stacked
+  const labels=[], dApp=[], dRej=[], dIgn=[];
+  for(let i=29;i>=0;i--){
+    const d=new Date(now-i*864e5); const k=dayKey(d);
+    labels.push(String(d.getDate())+"/"+(d.getMonth()+1));
+    const v=daily[k]||{approved:0,rejected:0,ignored:0};
+    dApp.push(v.approved||0); dRej.push(v.rejected||0); dIgn.push(v.ignored||0);
+  }
+  drawChart(labels,dApp,dRej,dIgn);
+}
+
+function statCard(title,s){
+  const c=el("div","stat-card");
+  c.innerHTML="<h4>"+esc(title)+"</h4>";
+  [["approved",s.approved],["rejected",s.rejected],["ignored",s.ignored]].forEach(([key,val])=>{
+    const m=ACTION_META[key];
+    const row=el("div","stat-row");
+    row.innerHTML=`<span class="k"><span class="dot" style="background:${m.color}"></span>${m.label}</span><span class="v">${val}</span>`;
+    c.appendChild(row);
+  });
+  return c;
+}
+function miniRow(left,right){ const d=el("div","mini"); d.innerHTML=`<span>${esc(left)}</span><b>${esc(right)}</b>`; return d; }
+function sum(s){ return s.approved+s.rejected+s.ignored+s.dismissed; }
+
+function drawChart(labels,app,rej,ign){
+  const ctx=$("trendChart");
+  if(trendChart) trendChart.destroy();
+  trendChart=new Chart(ctx,{
+    type:"bar",
+    data:{ labels, datasets:[
+      {label:"Approved",data:app,backgroundColor:ACTION_META.approved.color,stack:"s"},
+      {label:"Rejected",data:rej,backgroundColor:ACTION_META.rejected.color,stack:"s"},
+      {label:"Ignored", data:ign,backgroundColor:ACTION_META.ignored.color,stack:"s"},
+    ]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ labels:{ color:"#cdd6df", boxWidth:12 } } },
+      scales:{
+        x:{ stacked:true, ticks:{ color:"#93a1b0", maxRotation:0, autoSkip:true }, grid:{ color:"#232a32" } },
+        y:{ stacked:true, beginAtZero:true, ticks:{ color:"#93a1b0", precision:0 }, grid:{ color:"#232a32" } },
+      },
+    },
+  });
 }
 
 function el(tag,cls){const e=document.createElement(tag);if(cls)e.className=cls;return e;}
