@@ -458,6 +458,11 @@ async function loadList(){
   let q = sb.from(sch.table).select("*").order(sch.pk,{ascending:true}).limit(50);
   if(sch.kind==="generated") q = q.is(HUMAN_STATUS, null);
   const subs=Array.from(selectedSubjects);
+  if(subs.length && sch.subjectCol===null){
+    list.innerHTML='<div class="empty">A subject filter is active, but this queue ('+esc(sch.label)+') has no subject field to filter on.<br><br>Set the subject back to “All subjects” to review these.</div>';
+    $("count").textContent="";
+    return;
+  }
   if(subs.length && sch.subjectCol) q = q.in(sch.subjectCol, subs);   // subject filter
   const { data, error } = await q;
   if(error){
