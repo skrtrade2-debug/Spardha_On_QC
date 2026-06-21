@@ -83,8 +83,12 @@
 
   /* dashboard */
   .dash-wrap{max-width:1000px;margin:0 auto;padding:20px;display:grid;gap:18px;}
-  .dash-controls{display:flex;align-items:center;gap:12px;}
+  .dash-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
   .dash-title{font-weight:600;font-size:16px;}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+  .seg-btn{border:none;background:transparent;color:var(--muted);padding:7px 14px;font-size:13px;font-weight:500;}
+  .seg-btn+.seg-btn{border-left:1px solid var(--line);}
+  .seg-btn.active{background:var(--accent);color:var(--accent-ink);}
   .stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
   .stat-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;}
   .stat-card h4{margin:0 0 12px;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600;}
@@ -200,13 +204,18 @@
   <div class="dash-wrap">
     <div class="dash-controls">
       <span class="dash-title">QC activity</span>
+      <div class="seg" id="typeToggle">
+        <button class="seg-btn active" data-type="all">All</button>
+        <button class="seg-btn" data-type="mcq">MCQs</button>
+        <button class="seg-btn" data-type="notes">Notes</button>
+      </div>
       <button class="btn" id="dashRefresh">Refresh</button>
       <span class="spacer"></span>
       <span class="count" id="dashRange"></span>
     </div>
     <div class="stat-grid" id="statGrid"></div>
     <div class="chart-card">
-      <h4>Daily decisions — last 30 days</h4>
+      <h4 id="chartTitle">Daily decisions — last 30 days</h4>
       <div class="chart-box"><canvas id="trendChart"></canvas></div>
     </div>
     <div class="split-grid">
@@ -278,6 +287,8 @@ let currentEmail = "";
 let pick = { content:null, source:null };
 let activeKey = null;
 let trendChart = null;
+let dashType = "all";     // dashboard filter: all | mcq | notes
+let dashRows = [];        // cached qc_actions for re-filtering without refetch
 
 /* ---------- AUTH ---------- */
 $("sendBtn").onclick = async () => {
@@ -504,6 +515,15 @@ const ACTION_META = {
 
 function showDashboard(){ hideAll(); dashView.classList.remove("hidden"); loadDashboard(); }
 
+// MCQ / Notes toggle
+document.querySelectorAll("#typeToggle .seg-btn").forEach(b=>{
+  b.onclick=()=>{
+    dashType=b.dataset.type;
+    document.querySelectorAll("#typeToggle .seg-btn").forEach(x=>x.classList.toggle("active", x===b));
+    renderDashboard();   // re-render from cache, no refetch
+  };
+});
+
 async function loadDashboard(){
   $("statGrid").innerHTML='<div class="loading" style="grid-column:1/-1">Loading…</div>';
   $("dashRange").textContent="";
@@ -513,21 +533,26 @@ async function loadDashboard(){
     $("statGrid").innerHTML='<div class="empty" style="grid-column:1/-1">Could not load: '+esc(error.message)+'</div>';
     return;
   }
-  renderDashboard(data||[]);
+  dashRows = data||[];
+  renderDashboard();
 }
 
 function dayKey(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 
-function renderDashboard(rows){
+function renderDashboard(){
+  const allRows = dashRows;
+  const rows = dashType==="all" ? allRows : allRows.filter(r=>r.content_type===dashType);
+  const typeLabel = dashType==="all" ? "all content" : (dashType==="mcq" ? "MCQs only" : "Notes only");
+
   const now=Date.now();
   const startToday=new Date(); startToday.setHours(0,0,0,0);
   const weekAgo=now-7*864e5, monthAgo=now-30*864e5;
 
   const blank=()=>({approved:0,rejected:0,ignored:0,dismissed:0});
   const today=blank(), week=blank(), month=blank();
-  const byType={ mcq:blank(), notes:blank() };
+  const byType={ mcq:blank(), notes:blank() };   // always from all rows, for comparison
   const byMember={};
-  const daily={};                    // dayKey -> {approved,rejected,ignored}
+  const daily={};
 
   rows.forEach(r=>{
     const t=new Date(r.created_at).getTime();
@@ -535,13 +560,14 @@ function renderDashboard(rows){
     if(t>=monthAgo){ month[a]++; }
     if(t>=weekAgo){ week[a]++; }
     if(t>=startToday.getTime()){ today[a]++; }
-    if(r.content_type in byType) byType[r.content_type][a]++;
     const m=r.qc_member||"unknown"; (byMember[m]=byMember[m]||blank())[a]++;
     const k=dayKey(new Date(r.created_at));
     (daily[k]=daily[k]||{approved:0,rejected:0,ignored:0})[a] = (daily[k][a]||0) + (a==="dismissed"?0:1);
   });
+  allRows.forEach(r=>{ if(r.content_type in byType && (r.action in byType.mcq)) byType[r.content_type][r.action]++; });
 
-  $("dashRange").textContent=rows.length+" actions · last 30 days";
+  $("dashRange").textContent=rows.length+" actions · "+typeLabel+" · last 30 days";
+  $("chartTitle").textContent="Daily decisions — "+typeLabel+" — last 30 days";
 
   // stat cards
   const sg=$("statGrid"); sg.innerHTML="";
@@ -549,20 +575,20 @@ function renderDashboard(rows){
   sg.appendChild(statCard("Last 7 days", week));
   sg.appendChild(statCard("Last 30 days", month));
 
-  // by type
-  const tc=$("byTypeCard"); tc.innerHTML="<h4>By content type · last 30 days</h4>";
+  // by type (always both, for comparison)
+  const tc=$("byTypeCard"); tc.innerHTML="<h4>MCQs vs Notes · last 30 days</h4>";
   ["mcq","notes"].forEach(ct=>{
     const s=byType[ct]; const total=s.approved+s.rejected+s.ignored+s.dismissed;
     tc.appendChild(miniRow(ct==="mcq"?"MCQs":"Study Notes", `${total}  ·  ✓${s.approved} ✗${s.rejected} –${s.ignored}`));
   });
 
-  // by member
-  const mc=$("byMemberCard"); mc.innerHTML="<h4>By reviewer · last 30 days</h4>";
+  // by member (within current filter)
+  const mc=$("byMemberCard"); mc.innerHTML="<h4>By reviewer · "+typeLabel+"</h4>";
   const members=Object.entries(byMember).sort((a,b)=>(sum(b[1])-sum(a[1])));
   if(!members.length) mc.appendChild(miniRow("—","no activity"));
   members.forEach(([m,s])=> mc.appendChild(miniRow(m, `${sum(s)}  ·  ✓${s.approved} ✗${s.rejected} –${s.ignored}`)));
 
-  // chart: last 30 days stacked
+  // chart
   const labels=[], dApp=[], dRej=[], dIgn=[];
   for(let i=29;i>=0;i--){
     const d=new Date(now-i*864e5); const k=dayKey(d);
