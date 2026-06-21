@@ -496,7 +496,7 @@ async function loadList(){
   if(sch.kind==="generated"){
     const g=sch.gen;
     const applyFilters=(qb)=>{
-      qb = qb.eq("final_qc_status", true).is(HUMAN_STATUS, null);
+      qb = qb.eq("final_qc_status", true).or(`${HUMAN_STATUS}.is.null,${HUMAN_STATUS}.eq.`);
       if(subs.length && g.subjectCol) qb = qb.in(g.subjectCol, subs);
       return qb;
     };
