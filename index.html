@@ -672,9 +672,13 @@ function repCard(sch,row){
 /* ---------- SAVE + LOG ---------- */
 async function save(sch,row,patch,note,btns,okText){
   btns.forEach(b=>b.disabled=true); note.textContent="Saving…"; note.style.color="var(--muted)";
-  const { error } = await sb.from(sch.table).update(patch).eq(sch.pk,row[sch.pk]);
+  const { data, error } = await sb.from(sch.table).update(patch).eq(sch.pk,row[sch.pk]).select(sch.pk);
   btns.forEach(b=>b.disabled=false);
   if(error){ note.textContent="Error: "+error.message; note.style.color="var(--fail)"; return false; }
+  if(!data || data.length===0){
+    note.textContent="Not saved — the update was blocked (no rows changed). Check the RLS UPDATE policy.";
+    note.style.color="var(--fail)"; return false;
+  }
   note.textContent=okText||"Saved."; note.style.color="var(--pass)"; return true;
 }
 async function logAction(sch,row,action){
