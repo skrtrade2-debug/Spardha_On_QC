@@ -31,9 +31,10 @@
   .btn:hover{border-color:var(--accent);}
   .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);}
   .btn.pass{background:var(--pass);color:#06140c;border-color:var(--pass);}
+  .btn.fix{background:transparent;color:var(--warn);border-color:var(--warn);}
   .btn.fail{background:transparent;color:var(--fail);border-color:var(--fail);}
   .btn.ghost{background:transparent;color:var(--muted);}
-  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  .btn:disabled{opacity:.4;cursor:not-allowed;border-color:var(--line);color:var(--muted);background:transparent;}
 
   .auth-wrap{min-height:100vh;display:grid;place-items:center;padding:24px;}
   .auth{width:100%;max-width:380px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:28px;}
@@ -73,6 +74,10 @@
   .qfield textarea,.qfield input{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:10px 12px;font-size:15px;}
   .qfield textarea{min-height:48px;line-height:1.6;overflow:hidden;resize:none;}
   .qfield textarea:focus,.qfield input:focus{outline:none;border-color:var(--accent);}
+  /* view mode: fields look flat / read-only */
+  .qfield textarea[readonly],.qfield input[readonly]{background:var(--panel-2);border-color:var(--panel-2);cursor:default;}
+  /* edit mode: highlight that content is now editable */
+  .card-body.editing textarea:not([readonly]),.card-body.editing input:not([readonly]){background:var(--bg);border-color:var(--warn);}
   .qfield.dirty textarea,.qfield.dirty input{border-color:var(--warn);}
   .ro{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;white-space:pre-wrap;}
   .complaint{border-color:var(--fail);}
@@ -393,17 +398,20 @@ function genCard(sch,row){
 
   const body=el("div","card-body");
   const inputs={};
+  const origs={};
   sch.fields.forEach(([k,label,type])=>{
     const wrap=el("div","qfield");
     const lab=document.createElement("label"); lab.textContent=label; wrap.appendChild(lab);
     let inp;
     if(type==="textarea"){ inp=document.createElement("textarea"); }
     else { inp=document.createElement("input"); inp.type="text"; }
-    inp.classList.add("kn"); inp.value=row[k]??"";
-    if(type==="textarea") inp.addEventListener("input",()=>{ autoGrow(inp); wrap.classList.toggle("dirty", inp.value!==(row[k]??"")); });
-    else inp.addEventListener("input",()=>wrap.classList.toggle("dirty", inp.value!==(row[k]??"")));
+    inp.classList.add("kn"); inp.value=row[k]??""; origs[k]=row[k]??"";
+    inp.readOnly=true;                       // start in VIEW mode
+    if(type==="textarea") inp.addEventListener("input",()=>autoGrow(inp));
+    inp.addEventListener("input",onContentInput);
     inputs[k]=inp; wrap.appendChild(inp); body.appendChild(wrap);
   });
+  // QC comment — always editable
   const cwrap=el("div","qfield");
   const clab=document.createElement("label"); clab.textContent="QC comment (optional)"; cwrap.appendChild(clab);
   const comment=document.createElement("textarea"); comment.classList.add("kn"); comment.value=row[HUMAN_COMMENT]??"";
@@ -412,24 +420,59 @@ function genCard(sch,row){
   card.appendChild(body);
 
   const foot=el("div","card-foot");
-  const passBtn=mkBtn("Pass ✓","btn pass");
-  const failBtn=mkBtn("Needs fix ✗","btn fail");
-  const ignoreBtn=mkBtn("Ignore","btn ghost");
+  const approveBtn=mkBtn("Approved","btn pass");
+  const fixBtn=mkBtn("Need fixed","btn fix");
+  const rejectBtn=mkBtn("Rejected","btn fail");
+  const ignoreBtn=mkBtn("Ignored","btn ghost");
   const note=span("save-note","");
+  const others=[approveBtn,rejectBtn,ignoreBtn];
+  const allBtns=[approveBtn,fixBtn,rejectBtn,ignoreBtn];
+  let editMode=false, edited=false;
+
   const collect=()=>{ const p={}; sch.fields.forEach(([k])=>p[k]=inputs[k].value); return p; };
 
-  passBtn.onclick=()=>decide(true,"approved");
-  failBtn.onclick=()=>decide(false,"rejected");
-  ignoreBtn.onclick=async()=>{ await logAction(sch,row,"ignored"); note.textContent="Ignored."; removeCard(card,sch); };
-  async function decide(status,action){
+  function enterEdit(){
+    editMode=true;
+    body.classList.add("editing");
+    Object.values(inputs).forEach(i=>{ i.readOnly=false; });
+    const first=Object.values(inputs)[0]; if(first){ first.focus(); }
+  }
+  function onContentInput(){
+    if(!editMode || edited) return;
+    const dirty = sch.fields.some(([k])=> inputs[k].value !== origs[k]);
+    if(dirty){
+      edited=true;
+      fixBtn.textContent="Edit Submit";
+      fixBtn.classList.remove("fix"); fixBtn.classList.add("primary");
+      others.forEach(b=>{ b.disabled=true; });   // grey out, not clickable
+    }
+  }
+
+  approveBtn.onclick=()=>decide(true,"approved","Approved.");
+  rejectBtn.onclick=()=>decide(false,"rejected","Rejected.");
+  ignoreBtn.onclick=async()=>{ ignoreBtn.disabled=true; await logAction(sch,row,"ignored"); note.textContent="Ignored."; removeCard(card,sch); };
+  fixBtn.onclick=async()=>{
+    if(!editMode){ enterEdit(); return; }       // first click: open edit mode
+    if(!edited){ return; }                       // in edit mode, nothing changed yet
+    // edited → submit the correction
+    const patch=collect();
+    patch[HUMAN_STATUS]=true;                     // corrected & accepted
+    patch[HUMAN_COMMENT]=comment.value; patch[MEMBER_COL]=reviewerEmail;
+    if(await save(sch,row,patch,note,allBtns,"Fixed & saved.")){
+      await logAction(sch,row,"fixed");
+      removeCard(card,sch);
+    }
+  };
+  async function decide(status,action,okText){
     const patch=collect();
     patch[HUMAN_STATUS]=status; patch[HUMAN_COMMENT]=comment.value; patch[MEMBER_COL]=reviewerEmail;
-    if(await save(sch,row,patch,note,[passBtn,failBtn,ignoreBtn], status?"Passed.":"Marked for fix.")){
+    if(await save(sch,row,patch,note,allBtns,okText)){
       await logAction(sch,row,action);
       removeCard(card,sch);
     }
   }
-  foot.appendChild(passBtn); foot.appendChild(failBtn); foot.appendChild(ignoreBtn);
+
+  foot.appendChild(approveBtn); foot.appendChild(fixBtn); foot.appendChild(rejectBtn); foot.appendChild(ignoreBtn);
   foot.appendChild(span("spacer","")); foot.appendChild(note);
   card.appendChild(foot);
   return card;
@@ -508,6 +551,7 @@ function removeCard(card,sch){
    ============================================================ */
 const ACTION_META = {
   approved:{label:"Approved", color:"#3fa66a"},
+  fixed:   {label:"Fixed",    color:"#4f9d8f"},
   rejected:{label:"Rejected", color:"#c4615a"},
   ignored: {label:"Ignored",  color:"#7d8aa0"},
   dismissed:{label:"Dismissed", color:"#d9a441"},
@@ -548,7 +592,7 @@ function renderDashboard(){
   const startToday=new Date(); startToday.setHours(0,0,0,0);
   const weekAgo=now-7*864e5, monthAgo=now-30*864e5;
 
-  const blank=()=>({approved:0,rejected:0,ignored:0,dismissed:0});
+  const blank=()=>({approved:0,fixed:0,rejected:0,ignored:0,dismissed:0});
   const today=blank(), week=blank(), month=blank();
   const byType={ mcq:blank(), notes:blank() };   // always from all rows, for comparison
   const byMember={};
@@ -562,7 +606,7 @@ function renderDashboard(){
     if(t>=startToday.getTime()){ today[a]++; }
     const m=r.qc_member||"unknown"; (byMember[m]=byMember[m]||blank())[a]++;
     const k=dayKey(new Date(r.created_at));
-    (daily[k]=daily[k]||{approved:0,rejected:0,ignored:0})[a] = (daily[k][a]||0) + (a==="dismissed"?0:1);
+    (daily[k]=daily[k]||{approved:0,fixed:0,rejected:0,ignored:0})[a] = (daily[k][a]||0) + (a==="dismissed"?0:1);
   });
   allRows.forEach(r=>{ if(r.content_type in byType && (r.action in byType.mcq)) byType[r.content_type][r.action]++; });
 
@@ -578,31 +622,31 @@ function renderDashboard(){
   // by type (always both, for comparison)
   const tc=$("byTypeCard"); tc.innerHTML="<h4>MCQs vs Notes · last 30 days</h4>";
   ["mcq","notes"].forEach(ct=>{
-    const s=byType[ct]; const total=s.approved+s.rejected+s.ignored+s.dismissed;
-    tc.appendChild(miniRow(ct==="mcq"?"MCQs":"Study Notes", `${total}  ·  ✓${s.approved} ✗${s.rejected} –${s.ignored}`));
+    const s=byType[ct]; const total=sum(s);
+    tc.appendChild(miniRow(ct==="mcq"?"MCQs":"Study Notes", `${total}  ·  ✓${s.approved} ⟳${s.fixed} ✗${s.rejected} –${s.ignored}`));
   });
 
   // by member (within current filter)
   const mc=$("byMemberCard"); mc.innerHTML="<h4>By reviewer · "+typeLabel+"</h4>";
   const members=Object.entries(byMember).sort((a,b)=>(sum(b[1])-sum(a[1])));
   if(!members.length) mc.appendChild(miniRow("—","no activity"));
-  members.forEach(([m,s])=> mc.appendChild(miniRow(m, `${sum(s)}  ·  ✓${s.approved} ✗${s.rejected} –${s.ignored}`)));
+  members.forEach(([m,s])=> mc.appendChild(miniRow(m, `${sum(s)}  ·  ✓${s.approved} ⟳${s.fixed} ✗${s.rejected} –${s.ignored}`)));
 
   // chart
-  const labels=[], dApp=[], dRej=[], dIgn=[];
+  const labels=[], dApp=[], dFix=[], dRej=[], dIgn=[];
   for(let i=29;i>=0;i--){
     const d=new Date(now-i*864e5); const k=dayKey(d);
     labels.push(String(d.getDate())+"/"+(d.getMonth()+1));
-    const v=daily[k]||{approved:0,rejected:0,ignored:0};
-    dApp.push(v.approved||0); dRej.push(v.rejected||0); dIgn.push(v.ignored||0);
+    const v=daily[k]||{approved:0,fixed:0,rejected:0,ignored:0};
+    dApp.push(v.approved||0); dFix.push(v.fixed||0); dRej.push(v.rejected||0); dIgn.push(v.ignored||0);
   }
-  drawChart(labels,dApp,dRej,dIgn);
+  drawChart(labels,dApp,dFix,dRej,dIgn);
 }
 
 function statCard(title,s){
   const c=el("div","stat-card");
   c.innerHTML="<h4>"+esc(title)+"</h4>";
-  [["approved",s.approved],["rejected",s.rejected],["ignored",s.ignored]].forEach(([key,val])=>{
+  [["approved",s.approved],["fixed",s.fixed],["rejected",s.rejected],["ignored",s.ignored]].forEach(([key,val])=>{
     const m=ACTION_META[key];
     const row=el("div","stat-row");
     row.innerHTML=`<span class="k"><span class="dot" style="background:${m.color}"></span>${m.label}</span><span class="v">${val}</span>`;
@@ -611,15 +655,16 @@ function statCard(title,s){
   return c;
 }
 function miniRow(left,right){ const d=el("div","mini"); d.innerHTML=`<span>${esc(left)}</span><b>${esc(right)}</b>`; return d; }
-function sum(s){ return s.approved+s.rejected+s.ignored+s.dismissed; }
+function sum(s){ return s.approved+s.fixed+s.rejected+s.ignored+s.dismissed; }
 
-function drawChart(labels,app,rej,ign){
+function drawChart(labels,app,fix,rej,ign){
   const ctx=$("trendChart");
   if(trendChart) trendChart.destroy();
   trendChart=new Chart(ctx,{
     type:"bar",
     data:{ labels, datasets:[
       {label:"Approved",data:app,backgroundColor:ACTION_META.approved.color,stack:"s"},
+      {label:"Fixed",data:fix,backgroundColor:ACTION_META.fixed.color,stack:"s"},
       {label:"Rejected",data:rej,backgroundColor:ACTION_META.rejected.color,stack:"s"},
       {label:"Ignored", data:ign,backgroundColor:ACTION_META.ignored.color,stack:"s"},
     ]},
