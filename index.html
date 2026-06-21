@@ -328,14 +328,14 @@ const SCHEMAS = {
     gen: GEN_MCQ,
     reported: { table:"reported_questions", pk:"id", fk:"question_id", doneCol:"human_qc_done",
       complaint:["user_comment","User's complaint"],
-      context:[["question_id","Generated id"],["user_email","Reported by"]] },
+      context:[["question_id","Generated id"]] },
   },
   "notes:reported": {
     label: "Reported Notes · pending human QC", kind: "reported", subjectCol: null,
     gen: GEN_NOTES,
     reported: { table:"reported_notes", pk:"id", fk:"note_id", doneCol:"human_qc_done",
       complaint:["user_comment","User's complaint"],
-      context:[["note_id","Generated id"],["user_email","Reported by"]] },
+      context:[["note_id","Generated id"]] },
   },
 };
 // human_qc_status now stores a text label
@@ -598,7 +598,6 @@ function buildCard(sch, row, report){
   head.appendChild(span("row-id", g.pk+" · "+row[g.pk]));
   if(report){
     head.appendChild(span("chip rep", "REPORTED · " + sch.reported.pk + " " + report[sch.reported.pk]));
-    if(report.user_email) head.appendChild(span("chip", "Reported by: "+report.user_email));
   }
   g.context.forEach(([k,l])=>{ if(row[k]!=null && row[k]!=="") head.appendChild(span("chip", l+": "+row[k])); });
   card.appendChild(head);
