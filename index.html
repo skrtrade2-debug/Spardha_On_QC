@@ -6,7 +6,7 @@
 <title>Spardha On · QC Console</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Kannada:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Kannada:wght@400;500;600&family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   :root {
@@ -113,6 +113,30 @@
 
   .empty,.loading{text-align:center;color:var(--muted);padding:60px 20px;}
   .hidden{display:none!important;}
+
+  /* ---- app-style Notes preview (mirrors the mobile app) ---- */
+  .app-preview{background:#ffffff;color:#333A4F;border-radius:12px;padding:18px 18px 8px;
+    font-family:"Poppins","Noto Sans Kannada",system-ui,sans-serif;border:1px solid #e3e8f0;}
+  .app-topic{color:#1A2B4A;font-size:19px;font-weight:700;margin-bottom:10px;line-height:1.4;}
+  .md-h1{color:#1A237E;font-size:21px;font-weight:800;margin:16px 0 6px;line-height:1.35;}
+  .md-h2{color:#1565C0;font-size:18px;font-weight:700;margin:14px 0 6px;line-height:1.35;}
+  .md-h3{color:#3949AB;font-size:16px;font-weight:700;margin:12px 0 6px;line-height:1.35;}
+  .md-p{font-size:15px;line-height:1.73;margin:0 0 6px;color:#333A4F;}
+  .md-sp{height:8px;}
+  .md-bullet,.md-num{display:flex;align-items:flex-start;margin-bottom:5px;}
+  .md-l1{padding-left:26px;} .md-l2{padding-left:52px;}
+  .md-mk{flex:none;margin:8px 8px 0 0;}
+  .md-mk0{width:8px;height:8px;border-radius:50%;background:#6C63FF;}
+  .md-mk1{width:7px;height:7px;border-radius:50%;border:1.5px solid #3949AB;}
+  .md-mk2{width:5px;height:5px;background:#3949AB;}
+  .md-no{color:#6C63FF;font-weight:700;margin-right:8px;}
+  .md-bt{flex:1;font-size:15px;line-height:1.73;color:#333A4F;}
+  .md-bullet.md-l1 .md-bt{font-size:14px;} .md-bullet.md-l2 .md-bt{font-size:13px;}
+  .app-preview strong{font-weight:700;} .app-preview em{font-style:italic;}
+
+  /* date range inputs */
+  .dlabel{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:6px;}
+  .dlabel input[type=date]{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:6px 9px;font-size:13px;color-scheme:dark;}
   @media (max-width:640px){.choices{grid-template-columns:1fr;}.stat-grid{grid-template-columns:1fr;}.split-grid{grid-template-columns:1fr;}.list{padding:14px;}.toolbar{flex-wrap:wrap;}}
 </style>
 </head>
@@ -147,6 +171,7 @@
 <div id="menuView" class="hidden">
   <header>
     <span class="brand">Spardha On <small>QC Console</small></span>
+    <button class="btn" id="openDashBtn">📊 Dashboard</button>
     <span class="spacer"></span>
     <span class="who" id="whoMenu"></span>
     <button class="btn" id="signOutMenu">Sign out</button>
@@ -173,7 +198,6 @@
 
     <div class="start-row">
       <button class="btn primary" id="startBtn" disabled>Start reviewing</button>
-      <button class="btn" id="openDashBtn">📊 Open dashboard</button>
     </div>
   </div>
 </div>
@@ -214,6 +238,9 @@
         <button class="seg-btn" data-type="mcq">MCQs</button>
         <button class="seg-btn" data-type="notes">Notes</button>
       </div>
+      <label class="dlabel">From <input type="date" id="dateFrom"></label>
+      <label class="dlabel">To <input type="date" id="dateTo"></label>
+      <button class="btn" id="dateApply">Apply</button>
       <button class="btn" id="dashRefresh">Refresh</button>
       <span class="spacer"></span>
       <span class="count" id="dashRange"></span>
@@ -254,7 +281,7 @@ const SCHEMAS = {
   },
   "notes:generated": {
     label: "Generated Study Notes · pending human QC",
-    table: "generated_study_notes", pk: "id", kind: "generated",
+    table: "generated_study_notes", pk: "id", kind: "generated", markdown: true,
     context: [["subject_name","Subject"],["category","Category"]],
     fields: [
       ["topic_name","Topic (ವಿಷಯ)","text"],
@@ -388,6 +415,39 @@ async function loadList(){
 /* ---------- AUTO-GROW TEXTAREAS ---------- */
 function autoGrow(t){ t.style.height="auto"; t.style.height=(t.scrollHeight+2)+"px"; }
 
+/* ---------- MARKDOWN RENDERER (mirrors the app's TopicDetailScreen) ---------- */
+const MD_INLINE=/\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*(.+?)\*|_(.+?)_/g;
+function mdInlineHTML(text){
+  return esc(text).replace(MD_INLINE,(m,bi,b,i1,i2)=>{
+    if(bi!=null) return "<strong><em>"+bi+"</em></strong>";
+    if(b!=null)  return "<strong>"+b+"</strong>";
+    if(i1!=null) return "<em>"+i1+"</em>";
+    if(i2!=null) return "<em>"+i2+"</em>";
+    return m;
+  });
+}
+function renderMarkdown(md){
+  const lines=String(md??"").replace(/\r\n?/g,"\n").split("\n");
+  let html=""; let prevBullet=-1;
+  for(const raw of lines){
+    const expanded=raw.replace(/\t/g,"  ");
+    const indent=expanded.length - expanded.replace(/^ +/,"").length;
+    const line=expanded.trim();
+    const h=/^(#{1,6})\s*(.+)$/.exec(line);
+    const b=/^[-*•]\s+(.*)$/.exec(line);
+    const n=/^(\d+)\.\s+(.*)$/.exec(line);
+    if(line===""){ html+='<div class="md-sp"></div>'; prevBullet=-1; }
+    else if(h){ const lvl=h[1].length; const cls=lvl===1?"md-h1":lvl===2?"md-h2":"md-h3";
+      html+='<div class="'+cls+'">'+mdInlineHTML(h[2].trim())+"</div>"; prevBullet=-1; }
+    else if(b){ let lvl=Math.min(Math.floor(indent/2),2); if(lvl!==0) lvl=Math.min(lvl,prevBullet+1);
+      html+='<div class="md-bullet md-l'+lvl+'"><span class="md-mk md-mk'+lvl+'"></span><span class="md-bt">'+mdInlineHTML(b[1].trim())+"</span></div>"; prevBullet=lvl; }
+    else if(n){ const lvl=Math.min(Math.floor(indent/2),2);
+      html+='<div class="md-num md-l'+lvl+'"><span class="md-no">'+esc(n[1])+'.</span><span class="md-bt">'+mdInlineHTML(n[2].trim())+"</span></div>"; prevBullet=lvl; }
+    else { html+='<p class="md-p">'+mdInlineHTML(line)+"</p>"; prevBullet=-1; }
+  }
+  return html;
+}
+
 /* ---------- GENERATED CARD ---------- */
 function genCard(sch,row){
   const card=el("div","card");
@@ -397,20 +457,49 @@ function genCard(sch,row){
   card.appendChild(head);
 
   const body=el("div","card-body");
-  const inputs={};
   const origs={};
-  sch.fields.forEach(([k,label,type])=>{
-    const wrap=el("div","qfield");
-    const lab=document.createElement("label"); lab.textContent=label; wrap.appendChild(lab);
-    let inp;
-    if(type==="textarea"){ inp=document.createElement("textarea"); }
-    else { inp=document.createElement("input"); inp.type="text"; }
-    inp.classList.add("kn"); inp.value=row[k]??""; origs[k]=row[k]??"";
-    inp.readOnly=true;                       // start in VIEW mode
-    if(type==="textarea") inp.addEventListener("input",()=>autoGrow(inp));
-    inp.addEventListener("input",onContentInput);
-    inputs[k]=inp; wrap.appendChild(inp); body.appendChild(wrap);
-  });
+  sch.fields.forEach(([k])=> origs[k]=row[k]??"");
+  let collect, enterEditImpl, isDirty;
+
+  if(sch.markdown){
+    // ---- NOTES: app-style preview (view) → raw Markdown (edit) ----
+    const view=el("div","app-preview");
+    const topicEl=el("div","app-topic"); topicEl.innerHTML=mdInlineHTML(row["topic_name"]??"");
+    const mdEl=el("div","md-body"); mdEl.innerHTML=renderMarkdown(row["explanation"]??"");
+    view.appendChild(topicEl); view.appendChild(mdEl);
+    body.appendChild(view);
+
+    const edit=el("div","edit-box hidden");
+    const tWrap=el("div","qfield"); const tLab=document.createElement("label"); tLab.textContent="Topic (ವಿಷಯ)"; tWrap.appendChild(tLab);
+    const tInput=document.createElement("input"); tInput.type="text"; tInput.classList.add("kn"); tInput.value=row["topic_name"]??"";
+    tInput.addEventListener("input",onContentInput); tWrap.appendChild(tInput); edit.appendChild(tWrap);
+    const eWrap=el("div","qfield"); const eLab=document.createElement("label"); eLab.textContent="Explanation — Markdown source (ವಿವರಣೆ)"; eWrap.appendChild(eLab);
+    const eArea=document.createElement("textarea"); eArea.classList.add("kn"); eArea.value=row["explanation"]??"";
+    eArea.addEventListener("input",()=>{ autoGrow(eArea); onContentInput(); }); eWrap.appendChild(eArea); edit.appendChild(eWrap);
+    body.appendChild(edit);
+
+    collect=()=>({ topic_name:tInput.value, explanation:eArea.value });
+    isDirty=()=>( tInput.value!==origs.topic_name || eArea.value!==origs.explanation );
+    enterEditImpl=()=>{ view.classList.add("hidden"); edit.classList.remove("hidden"); autoGrow(eArea); tInput.focus(); };
+  } else {
+    // ---- MCQ: read-only fields that unlock on edit ----
+    const inputs={};
+    sch.fields.forEach(([k,label,type])=>{
+      const wrap=el("div","qfield");
+      const lab=document.createElement("label"); lab.textContent=label; wrap.appendChild(lab);
+      let inp;
+      if(type==="textarea"){ inp=document.createElement("textarea"); }
+      else { inp=document.createElement("input"); inp.type="text"; }
+      inp.classList.add("kn"); inp.value=row[k]??""; inp.readOnly=true;
+      if(type==="textarea") inp.addEventListener("input",()=>autoGrow(inp));
+      inp.addEventListener("input",onContentInput);
+      inputs[k]=inp; wrap.appendChild(inp); body.appendChild(wrap);
+    });
+    collect=()=>{ const p={}; sch.fields.forEach(([k])=>p[k]=inputs[k].value); return p; };
+    isDirty=()=> sch.fields.some(([k])=> inputs[k].value !== origs[k]);
+    enterEditImpl=()=>{ body.classList.add("editing"); Object.values(inputs).forEach(i=>{ i.readOnly=false; }); const f=Object.values(inputs)[0]; if(f) f.focus(); };
+  }
+
   // QC comment — always editable
   const cwrap=el("div","qfield");
   const clab=document.createElement("label"); clab.textContent="QC comment (optional)"; cwrap.appendChild(clab);
@@ -429,18 +518,10 @@ function genCard(sch,row){
   const allBtns=[approveBtn,fixBtn,rejectBtn,ignoreBtn];
   let editMode=false, edited=false;
 
-  const collect=()=>{ const p={}; sch.fields.forEach(([k])=>p[k]=inputs[k].value); return p; };
-
-  function enterEdit(){
-    editMode=true;
-    body.classList.add("editing");
-    Object.values(inputs).forEach(i=>{ i.readOnly=false; });
-    const first=Object.values(inputs)[0]; if(first){ first.focus(); }
-  }
+  function enterEdit(){ editMode=true; enterEditImpl(); }
   function onContentInput(){
     if(!editMode || edited) return;
-    const dirty = sch.fields.some(([k])=> inputs[k].value !== origs[k]);
-    if(dirty){
+    if(isDirty()){
       edited=true;
       fixBtn.textContent="Edit Submit";
       fixBtn.classList.remove("fix"); fixBtn.classList.add("primary");
@@ -557,7 +638,14 @@ const ACTION_META = {
   dismissed:{label:"Dismissed", color:"#d9a441"},
 };
 
-function showDashboard(){ hideAll(); dashView.classList.remove("hidden"); loadDashboard(); }
+function showDashboard(){
+  hideAll(); dashView.classList.remove("hidden");
+  if(!$("dateFrom").value || !$("dateTo").value){
+    $("dateTo").value=dayKey(new Date());
+    $("dateFrom").value=dayKey(new Date(Date.now()-29*864e5));
+  }
+  loadDashboard();
+}
 
 // MCQ / Notes toggle
 document.querySelectorAll("#typeToggle .seg-btn").forEach(b=>{
@@ -567,12 +655,30 @@ document.querySelectorAll("#typeToggle .seg-btn").forEach(b=>{
     renderDashboard();   // re-render from cache, no refetch
   };
 });
+$("dateApply").onclick=loadDashboard;
+
+function dayKey(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function startOfDay(ymd){ return new Date(ymd+"T00:00:00"); }
+function endOfDay(ymd){ const d=new Date(ymd+"T00:00:00"); d.setHours(23,59,59,999); return d; }
+function selectedRange(){
+  const fromV=$("dateFrom").value, toV=$("dateTo").value;
+  const from = fromV ? startOfDay(fromV) : new Date(Date.now()-29*864e5);
+  const to   = toV   ? endOfDay(toV)     : endOfDay(dayKey(new Date()));
+  return { from, to };
+}
 
 async function loadDashboard(){
   $("statGrid").innerHTML='<div class="loading" style="grid-column:1/-1">Loading…</div>';
   $("dashRange").textContent="";
-  const sinceISO = new Date(Date.now()-30*864e5).toISOString();
-  const { data, error } = await sb.from("qc_actions").select("*").gte("created_at", sinceISO).order("created_at",{ascending:true}).limit(5000);
+  const { from, to } = selectedRange();
+  // fetch window also covers the last 7 days, so the Today / Last 7 cards stay correct
+  const last7=new Date(); last7.setDate(last7.getDate()-6); last7.setHours(0,0,0,0);
+  const fetchFrom=new Date(Math.min(from.getTime(), last7.getTime()));
+  const fetchTo  =new Date(Math.max(to.getTime(), Date.now()));
+  const { data, error } = await sb.from("qc_actions").select("*")
+    .gte("created_at", fetchFrom.toISOString())
+    .lte("created_at", fetchTo.toISOString())
+    .order("created_at",{ascending:true}).limit(20000);
   if(error){
     $("statGrid").innerHTML='<div class="empty" style="grid-column:1/-1">Could not load: '+esc(error.message)+'</div>';
     return;
@@ -581,64 +687,73 @@ async function loadDashboard(){
   renderDashboard();
 }
 
-function dayKey(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
-
 function renderDashboard(){
+  const { from, to } = selectedRange();
+  const fromT=from.getTime(), toT=to.getTime();
   const allRows = dashRows;
-  const rows = dashType==="all" ? allRows : allRows.filter(r=>r.content_type===dashType);
+  const typed = dashType==="all" ? allRows : allRows.filter(r=>r.content_type===dashType);
   const typeLabel = dashType==="all" ? "all content" : (dashType==="mcq" ? "MCQs only" : "Notes only");
+  const rangeLabel = dayKey(from)+" → "+dayKey(to);
 
   const now=Date.now();
   const startToday=new Date(); startToday.setHours(0,0,0,0);
-  const weekAgo=now-7*864e5, monthAgo=now-30*864e5;
+  const weekAgo=now-7*864e5;
 
   const blank=()=>({approved:0,fixed:0,rejected:0,ignored:0,dismissed:0});
-  const today=blank(), week=blank(), month=blank();
-  const byType={ mcq:blank(), notes:blank() };   // always from all rows, for comparison
+  const today=blank(), week=blank(), range=blank();
+  const byType={ mcq:blank(), notes:blank() };
   const byMember={};
   const daily={};
 
-  rows.forEach(r=>{
+  typed.forEach(r=>{
     const t=new Date(r.created_at).getTime();
     const a=r.action; if(!(a in today)) return;
-    if(t>=monthAgo){ month[a]++; }
-    if(t>=weekAgo){ week[a]++; }
-    if(t>=startToday.getTime()){ today[a]++; }
-    const m=r.qc_member||"unknown"; (byMember[m]=byMember[m]||blank())[a]++;
-    const k=dayKey(new Date(r.created_at));
-    (daily[k]=daily[k]||{approved:0,fixed:0,rejected:0,ignored:0})[a] = (daily[k][a]||0) + (a==="dismissed"?0:1);
+    if(t>=startToday.getTime()) today[a]++;
+    if(t>=weekAgo) week[a]++;
+    if(t>=fromT && t<=toT){
+      range[a]++;
+      const m=r.qc_member||"unknown"; (byMember[m]=byMember[m]||blank())[a]++;
+      const k=dayKey(new Date(r.created_at));
+      (daily[k]=daily[k]||{approved:0,fixed:0,rejected:0,ignored:0})[a] = (daily[k][a]||0) + (a==="dismissed"?0:1);
+    }
   });
-  allRows.forEach(r=>{ if(r.content_type in byType && (r.action in byType.mcq)) byType[r.content_type][r.action]++; });
+  allRows.forEach(r=>{
+    const t=new Date(r.created_at).getTime();
+    if(t<fromT || t>toT) return;
+    if(r.content_type in byType && (r.action in byType.mcq)) byType[r.content_type][r.action]++;
+  });
 
-  $("dashRange").textContent=rows.length+" actions · "+typeLabel+" · last 30 days";
-  $("chartTitle").textContent="Daily decisions — "+typeLabel+" — last 30 days";
+  $("dashRange").textContent=sum(range)+" actions · "+typeLabel+" · "+rangeLabel;
+  $("chartTitle").textContent="Daily decisions — "+typeLabel+" — "+rangeLabel;
 
   // stat cards
   const sg=$("statGrid"); sg.innerHTML="";
   sg.appendChild(statCard("Today", today));
   sg.appendChild(statCard("Last 7 days", week));
-  sg.appendChild(statCard("Last 30 days", month));
+  sg.appendChild(statCard("Selected range", range));
 
-  // by type (always both, for comparison)
-  const tc=$("byTypeCard"); tc.innerHTML="<h4>MCQs vs Notes · last 30 days</h4>";
+  // by type (both, for comparison) within the selected range
+  const tc=$("byTypeCard"); tc.innerHTML="<h4>MCQs vs Notes · selected range</h4>";
   ["mcq","notes"].forEach(ct=>{
     const s=byType[ct]; const total=sum(s);
     tc.appendChild(miniRow(ct==="mcq"?"MCQs":"Study Notes", `${total}  ·  ✓${s.approved} ⟳${s.fixed} ✗${s.rejected} –${s.ignored}`));
   });
 
-  // by member (within current filter)
+  // by member within the selected range
   const mc=$("byMemberCard"); mc.innerHTML="<h4>By reviewer · "+typeLabel+"</h4>";
   const members=Object.entries(byMember).sort((a,b)=>(sum(b[1])-sum(a[1])));
   if(!members.length) mc.appendChild(miniRow("—","no activity"));
   members.forEach(([m,s])=> mc.appendChild(miniRow(m, `${sum(s)}  ·  ✓${s.approved} ⟳${s.fixed} ✗${s.rejected} –${s.ignored}`)));
 
-  // chart
+  // chart: one bar per day across the selected range
   const labels=[], dApp=[], dFix=[], dRej=[], dIgn=[];
-  for(let i=29;i>=0;i--){
-    const d=new Date(now-i*864e5); const k=dayKey(d);
-    labels.push(String(d.getDate())+"/"+(d.getMonth()+1));
+  let cursor=startOfDay(dayKey(from)); const endDay=startOfDay(dayKey(to)).getTime(); let guard=0;
+  while(cursor.getTime()<=endDay && guard<400){
+    const k=dayKey(cursor);
+    labels.push(cursor.getDate()+"/"+(cursor.getMonth()+1));
     const v=daily[k]||{approved:0,fixed:0,rejected:0,ignored:0};
     dApp.push(v.approved||0); dFix.push(v.fixed||0); dRej.push(v.rejected||0); dIgn.push(v.ignored||0);
+    cursor.setDate(cursor.getDate()+1); guard++;
   }
   drawChart(labels,dApp,dFix,dRej,dIgn);
 }
