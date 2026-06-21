@@ -495,7 +495,10 @@ async function loadList(){
 
   if(sch.kind==="generated"){
     const g=sch.gen;
-    let q = sb.from(g.table).select("*").is(HUMAN_STATUS, null).order(g.pk,{ascending:true}).limit(50);
+    let q = sb.from(g.table).select("*")
+      .eq("final_qc_status", true)     // only final-QC-approved content
+      .is(HUMAN_STATUS, null)          // not yet human-reviewed
+      .order(g.pk,{ascending:true}).limit(50);
     if(subs.length && g.subjectCol) q = q.in(g.subjectCol, subs);
     const { data, error } = await q;
     if(error){
