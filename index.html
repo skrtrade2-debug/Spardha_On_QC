@@ -84,6 +84,7 @@
   .card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel-2);}
   .row-id{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;}
   .chip{font-size:11px;padding:3px 9px;border-radius:99px;background:var(--bg);border:1px solid var(--line);color:var(--muted);}
+  .chip.rep{background:rgba(217,164,65,.16);border-color:var(--warn);color:var(--warn);font-weight:600;letter-spacing:.3px;}
   .card-body{padding:16px;display:grid;gap:14px;}
   .qfield label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;}
   .qfield textarea,.qfield input{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:10px 12px;font-size:15px;}
@@ -292,45 +293,54 @@ const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 /* ================================= */
 
 
+// Shared generated-table configs (reused by the reported queues for editing)
+const GEN_MCQ = {
+  table: "generated_mcqs", pk: "id", markdown: false, subjectCol: "subject",
+  context: [["subject","Subject"],["chapter_name","Chapter"],["difficulty","Difficulty"]],
+  fields: [
+    ["mcq_question","Question (ಪ್ರಶ್ನೆ)","textarea"],
+    ["option1","Option 1","text"],["option2","Option 2","text"],
+    ["option3","Option 3","text"],["option4","Option 4","text"],
+    ["answer","Answer (ಉತ್ತರ)","text"],
+    ["answer_explanation","Explanation (ವಿವರಣೆ)","textarea"],
+  ],
+};
+const GEN_NOTES = {
+  table: "generated_study_notes", pk: "id", markdown: true, subjectCol: "subject_name",
+  context: [["subject_name","Subject"],["category","Category"]],
+  fields: [
+    ["topic_name","Topic (ವಿಷಯ)","text"],
+    ["explanation","Explanation (ವಿವರಣೆ)","textarea"],
+  ],
+};
+
 const SCHEMAS = {
   "mcq:generated": {
-    label: "Generated MCQs · pending human QC",
-    table: "generated_mcqs", pk: "id", kind: "generated", subjectCol: "subject",
-    context: [["subject","Subject"],["chapter_name","Chapter"],["difficulty","Difficulty"]],
-    fields: [
-      ["mcq_question","Question (ಪ್ರಶ್ನೆ)","textarea"],
-      ["option1","Option 1","text"],["option2","Option 2","text"],
-      ["option3","Option 3","text"],["option4","Option 4","text"],
-      ["answer","Answer (ಉತ್ತರ)","text"],
-      ["answer_explanation","Explanation (ವಿವರಣೆ)","textarea"],
-    ],
+    label: "Generated MCQs · pending human QC", kind: "generated",
+    subjectCol: "subject", gen: GEN_MCQ,
   },
   "notes:generated": {
-    label: "Generated Study Notes · pending human QC",
-    table: "generated_study_notes", pk: "id", kind: "generated", markdown: true, subjectCol: "subject_name",
-    context: [["subject_name","Subject"],["category","Category"]],
-    fields: [
-      ["topic_name","Topic (ವಿಷಯ)","text"],
-      ["explanation","Explanation (ವಿವರಣೆ)","textarea"],
-    ],
+    label: "Generated Study Notes · pending human QC", kind: "generated",
+    subjectCol: "subject_name", gen: GEN_NOTES,
   },
   "mcq:reported": {
-    label: "Reported Questions · user-flagged",
-    table: "reported_questions", pk: "id", kind: "reported", subjectCol: null,
-    context: [["question_id","Live Q id"],["user_email","Reported by"],["difficulty","Difficulty"]],
-    complaint: ["user_comment","User's complaint"],
-    show: [["mcq_question","Question"],["option1","Option 1"],["option2","Option 2"],
-           ["option3","Option 3"],["option4","Option 4"],["answer","Answer"],
-           ["answer_explanation","Explanation"]],
+    label: "Reported MCQs · pending human QC", kind: "reported", subjectCol: null,
+    gen: GEN_MCQ,
+    reported: { table:"reported_questions", pk:"id", fk:"question_id", doneCol:"human_qc_done",
+      complaint:["user_comment","User's complaint"],
+      context:[["question_id","Generated id"],["user_email","Reported by"]] },
   },
   "notes:reported": {
-    label: "Reported Notes · user-flagged",
-    table: "reported_notes", pk: "id", kind: "reported", subjectCol: "subject_name",
-    context: [["note_id","Live note id"],["subject_name","Subject"],["user_email","Reported by"]],
-    complaint: ["user_comment","User's complaint"],
-    show: [["topic_name","Topic"],["explanation","Explanation"]],
+    label: "Reported Notes · pending human QC", kind: "reported", subjectCol: null,
+    gen: GEN_NOTES,
+    reported: { table:"reported_notes", pk:"id", fk:"note_id", doneCol:"human_qc_done",
+      complaint:["user_comment","User's complaint"],
+      context:[["note_id","Generated id"],["user_email","Reported by"]] },
   },
 };
+// human_qc_status now stores a text label
+const STATUS = { APPROVED:"Approved", FIXED:"Edit Submit", REJECTED:"Rejected", IGNORED:"Ignored" };
+const STATUS_TO_ACTION = { "Approved":"approved", "Edit Submit":"fixed", "Rejected":"rejected", "Ignored":"ignored" };
 const HUMAN_STATUS = "human_qc_status";
 const HUMAN_COMMENT = "human_qc_comment";
 const MEMBER_COL = "qc_member";
@@ -347,6 +357,8 @@ let activeKey = null;
 let trendChart = null;
 let dashType = "all";     // dashboard filter: all | mcq | notes
 let dashRows = [];        // cached qc_actions for re-filtering without refetch
+let signedInOnce = false; // so token refresh / tab-switch doesn't navigate
+const VIEW_KEY = "qc:view";    // sessionStorage key for last view
 
 /* ---------- AUTH ---------- */
 $("sendBtn").onclick = async () => {
@@ -369,27 +381,50 @@ $("verifyBtn").onclick = async () => {
   if(error) return setMsg(codeMsg,error.message,"err");
 };
 $("backLink").onclick=(e)=>{e.preventDefault();$("stepCode").classList.add("hidden");$("stepEmail").classList.remove("hidden");setMsg(codeMsg,"");setMsg(emailMsg,"");};
-const doSignOut=async()=>{await sb.auth.signOut();};
+const doSignOut=async()=>{ try{ sessionStorage.removeItem(VIEW_KEY); }catch(_){} await sb.auth.signOut();};
 $("signOut").onclick=doSignOut; $("signOutMenu").onclick=doSignOut; $("signOutDash").onclick=doSignOut;
 $("email").addEventListener("keydown",(e)=>{if(e.key==="Enter")$("sendBtn").click();});
 $("code").addEventListener("keydown",(e)=>{if(e.key==="Enter")$("verifyBtn").click();});
 function setMsg(el,t,k){el.textContent=t||"";el.className="msg"+(k?" "+k:"");}
 
-sb.auth.onAuthStateChange((_e,session)=>{ session?.user ? onLogin(session.user) : showAuth(); });
-(async()=>{ const {data}=await sb.auth.getSession(); data.session?.user ? onLogin(data.session.user) : showAuth(); })();
+// Token refresh / tab-focus events also fire SIGNED_IN; only navigate on the *first* sign-in,
+// so reviewers don't get bounced back to the menu when they switch tabs.
+sb.auth.onAuthStateChange((event, session)=>{
+  if(!session?.user){ signedInOnce=false; showAuth(); return; }
+  // refresh displayed email regardless
+  reviewerEmail=session.user.email;
+  $("who").textContent=session.user.email; $("whoMenu").textContent=session.user.email; $("whoDash").textContent=session.user.email;
+  if(!signedInOnce){ signedInOnce=true; onLogin(session.user); }
+});
+(async()=>{
+  const {data}=await sb.auth.getSession();
+  if(data.session?.user){ signedInOnce=true; onLogin(data.session.user); } else { showAuth(); }
+})();
 
 function hideAll(){[authView,menuView,appView,dashView].forEach(v=>v.classList.add("hidden"));}
 function showAuth(){hideAll();authView.classList.remove("hidden");}
 function onLogin(user){
   reviewerEmail=user.email;
   $("who").textContent=user.email; $("whoMenu").textContent=user.email; $("whoDash").textContent=user.email;
-  showMenu();
+  // restore the queue the reviewer was in (if any), so reload/tab-switch keeps their place
+  let saved=null;
+  try{ saved=JSON.parse(sessionStorage.getItem(VIEW_KEY)||"null"); }catch(_){}
+  if(saved && saved.activeKey && SCHEMAS[saved.activeKey]){
+    activeKey=saved.activeKey;
+    const [c,s]=activeKey.split(":"); pick={content:c,source:s};
+    if(Array.isArray(saved.subjects)){ selectedSubjects.clear(); saved.subjects.forEach(x=>selectedSubjects.add(x)); updateSubjectLabel(); }
+    hideAll(); appView.classList.remove("hidden");
+    loadList();
+  } else {
+    showMenu();
+  }
 }
 
 /* ---------- MENU ---------- */
 function showMenu(){
   hideAll(); menuView.classList.remove("hidden");
   pick={content:null,source:null}; activeKey=null;
+  try{ sessionStorage.removeItem(VIEW_KEY); }catch(_){}
   document.querySelectorAll(".choice").forEach(c=>c.classList.remove("sel"));
   $("startBtn").disabled=true;
 }
@@ -406,6 +441,7 @@ function mark(kind,btn){
 }
 $("startBtn").onclick=()=>{
   activeKey = pick.content+":"+pick.source;
+  try{ sessionStorage.setItem(VIEW_KEY, JSON.stringify({ activeKey, subjects: Array.from(selectedSubjects) })); }catch(_){}
   hideAll(); appView.classList.remove("hidden");
   loadList();
 };
@@ -455,27 +491,63 @@ async function loadList(){
   const sch=SCHEMAS[activeKey];
   $("queueName").textContent=sch.label;
   const list=$("list"); list.innerHTML='<div class="loading">Loading…</div>'; $("count").textContent="";
-  let q = sb.from(sch.table).select("*").order(sch.pk,{ascending:true}).limit(50);
-  if(sch.kind==="generated") q = q.is(HUMAN_STATUS, null);
   const subs=Array.from(selectedSubjects);
-  if(subs.length && sch.subjectCol===null){
-    list.innerHTML='<div class="empty">A subject filter is active, but this queue ('+esc(sch.label)+') has no subject field to filter on.<br><br>Set the subject back to “All subjects” to review these.</div>';
-    $("count").textContent="";
+
+  if(sch.kind==="generated"){
+    const g=sch.gen;
+    let q = sb.from(g.table).select("*").is(HUMAN_STATUS, null).order(g.pk,{ascending:true}).limit(50);
+    if(subs.length && g.subjectCol) q = q.in(g.subjectCol, subs);
+    const { data, error } = await q;
+    if(error){
+      list.innerHTML='<div class="empty">Could not load: '+esc(error.message)+'<br><br>Likely an RLS read policy on '+esc(g.table)+'.</div>';
+      return;
+    }
+    $("count").textContent=data.length+" pending";
+    if(!data.length){ list.innerHTML='<div class="empty">Nothing here. 🎉</div>'; return; }
+    list.innerHTML="";
+    data.forEach(row=>{
+      const card=buildCard(sch,row,null);
+      list.appendChild(card);
+      card.querySelectorAll("textarea").forEach(autoGrow);
+    });
     return;
   }
-  if(subs.length && sch.subjectCol) q = q.in(sch.subjectCol, subs);   // subject filter
-  const { data, error } = await q;
-  if(error){
-    list.innerHTML='<div class="empty">Could not load: '+esc(error.message)+'<br><br>Likely an RLS read policy on '+esc(sch.table)+'.</div>';
+
+  // --- REPORTED: join report → generated_* by id ---
+  const r=sch.reported, g=sch.gen;
+  let rq = sb.from(r.table).select("*").or(`${r.doneCol}.is.null,${r.doneCol}.eq.false`).order(r.pk,{ascending:true}).limit(100);
+  const { data: reports, error: rErr } = await rq;
+  if(rErr){
+    list.innerHTML='<div class="empty">Could not load reports: '+esc(rErr.message)+'<br><br>Check RLS / grants on '+esc(r.table)+'.</div>';
     return;
   }
-  $("count").textContent=data.length+(sch.kind==="generated"?" pending":" reports");
-  if(!data.length){ list.innerHTML='<div class="empty">Nothing here. 🎉</div>'; return; }
+  if(!reports.length){ $("count").textContent="0 reports"; list.innerHTML='<div class="empty">No reports pending. 🎉</div>'; return; }
+
+  const ids = [...new Set(reports.map(rep=>rep[r.fk]).filter(v=>v!=null))];
+  if(!ids.length){
+    list.innerHTML='<div class="empty">Reports exist but none link to a generated row (missing '+esc(r.fk)+').</div>';
+    return;
+  }
+  const { data: sources, error: sErr } = await sb.from(g.table).select("*").in(g.pk, ids);
+  if(sErr){
+    list.innerHTML='<div class="empty">Could not load source content: '+esc(sErr.message)+'<br><br>Check RLS / grants on '+esc(g.table)+'.</div>';
+    return;
+  }
+  const byId=new Map(sources.map(s=>[s[g.pk], s]));
+  let pairs = reports
+    .map(rep=>({ report: rep, source: byId.get(rep[r.fk]) }))
+    .filter(p=>p.source);                                        // drop orphans
+  if(subs.length && g.subjectCol){
+    pairs = pairs.filter(p=> subs.includes(p.source[g.subjectCol]));
+  }
+
+  $("count").textContent=pairs.length+" reports";
+  if(!pairs.length){ list.innerHTML='<div class="empty">No reports match this filter.</div>'; return; }
   list.innerHTML="";
-  data.forEach(row=>{
-    const card = sch.kind==="generated" ? genCard(sch,row) : repCard(sch,row);
+  pairs.forEach(p=>{
+    const card=buildCard(sch, p.source, p.report);
     list.appendChild(card);
-    card.querySelectorAll("textarea").forEach(autoGrow);  // fit content after layout
+    card.querySelectorAll("textarea").forEach(autoGrow);
   });
 }
 
@@ -515,110 +587,120 @@ function renderMarkdown(md){
   return html;
 }
 
-/* ---------- GENERATED CARD ---------- */
-function genCard(sch,row){
-  const card=el("div","card");
-  const head=el("div","card-head");
-  head.appendChild(span("row-id", sch.pk+" · "+row[sch.pk]));
-  sch.context.forEach(([k,l])=>{ if(row[k]!=null&&row[k]!=="") head.appendChild(span("chip", l+": "+row[k])); });
+/* ---------- UNIFIED CARD (handles generated + reported) ---------- */
+function buildCard(sch, row, report){
+  const g = sch.gen;
+  const card = el("div","card");
+  const head = el("div","card-head");
+  head.appendChild(span("row-id", g.pk+" · "+row[g.pk]));
+  if(report){
+    head.appendChild(span("chip rep", "REPORTED · " + sch.reported.pk + " " + report[sch.reported.pk]));
+    if(report.user_email) head.appendChild(span("chip", "Reported by: "+report.user_email));
+  }
+  g.context.forEach(([k,l])=>{ if(row[k]!=null && row[k]!=="") head.appendChild(span("chip", l+": "+row[k])); });
   card.appendChild(head);
 
-  const body=el("div","card-body");
-  const origs={};
-  sch.fields.forEach(([k])=> origs[k]=row[k]??"");
+  const body = el("div","card-body");
+
+  // Reported items: show the user's complaint first
+  if(report){
+    const [ck,cl] = sch.reported.complaint;
+    const comp = el("div","qfield complaint");
+    const compLab = document.createElement("label"); compLab.textContent = cl; comp.appendChild(compLab);
+    const compBox = el("div","ro kn"); compBox.textContent = report[ck] ?? ""; comp.appendChild(compBox);
+    body.appendChild(comp);
+  }
+
+  const origs = {};
+  g.fields.forEach(([k])=> origs[k]=row[k]??"");
   let collect, enterEditImpl, isDirty;
 
-  if(sch.markdown){
+  if(g.markdown){
     // ---- NOTES: app-style preview (view) → raw Markdown (edit) ----
-    const view=el("div","app-preview");
-    const topicEl=el("div","app-topic"); topicEl.innerHTML=mdInlineHTML(row["topic_name"]??"");
-    const mdEl=el("div","md-body"); mdEl.innerHTML=renderMarkdown(row["explanation"]??"");
+    const view = el("div","app-preview");
+    const topicEl = el("div","app-topic"); topicEl.innerHTML = mdInlineHTML(row["topic_name"]??"");
+    const mdEl = el("div","md-body"); mdEl.innerHTML = renderMarkdown(row["explanation"]??"");
     view.appendChild(topicEl); view.appendChild(mdEl);
     body.appendChild(view);
 
-    const edit=el("div","edit-box hidden");
-    const tWrap=el("div","qfield"); const tLab=document.createElement("label"); tLab.textContent="Topic (ವಿಷಯ)"; tWrap.appendChild(tLab);
-    const tInput=document.createElement("input"); tInput.type="text"; tInput.classList.add("kn"); tInput.value=row["topic_name"]??"";
-    tInput.addEventListener("input",onContentInput); tWrap.appendChild(tInput); edit.appendChild(tWrap);
-    const eWrap=el("div","qfield"); const eLab=document.createElement("label"); eLab.textContent="Explanation — Markdown source (ವಿವರಣೆ)"; eWrap.appendChild(eLab);
-    const eArea=document.createElement("textarea"); eArea.classList.add("kn"); eArea.value=row["explanation"]??"";
-    eArea.addEventListener("input",()=>{ autoGrow(eArea); onContentInput(); }); eWrap.appendChild(eArea); edit.appendChild(eWrap);
+    const edit = el("div","edit-box hidden");
+    const tWrap = el("div","qfield"); const tLab = document.createElement("label"); tLab.textContent = "Topic (ವಿಷಯ)"; tWrap.appendChild(tLab);
+    const tInput = document.createElement("input"); tInput.type = "text"; tInput.classList.add("kn"); tInput.value = row["topic_name"]??"";
+    tInput.addEventListener("input", onContentInput); tWrap.appendChild(tInput); edit.appendChild(tWrap);
+    const eWrap = el("div","qfield"); const eLab = document.createElement("label"); eLab.textContent = "Explanation — Markdown source (ವಿವರಣೆ)"; eWrap.appendChild(eLab);
+    const eArea = document.createElement("textarea"); eArea.classList.add("kn"); eArea.value = row["explanation"]??"";
+    eArea.addEventListener("input", ()=>{ autoGrow(eArea); onContentInput(); }); eWrap.appendChild(eArea); edit.appendChild(eWrap);
     body.appendChild(edit);
 
-    collect=()=>({ topic_name:tInput.value, explanation:eArea.value });
-    isDirty=()=>( tInput.value!==origs.topic_name || eArea.value!==origs.explanation );
-    enterEditImpl=()=>{ view.classList.add("hidden"); edit.classList.remove("hidden"); autoGrow(eArea); tInput.focus(); };
+    collect = ()=>({ topic_name: tInput.value, explanation: eArea.value });
+    isDirty = ()=>( tInput.value!==origs.topic_name || eArea.value!==origs.explanation );
+    enterEditImpl = ()=>{ view.classList.add("hidden"); edit.classList.remove("hidden"); autoGrow(eArea); tInput.focus(); };
   } else {
     // ---- MCQ: read-only fields that unlock on edit ----
-    const inputs={};
-    sch.fields.forEach(([k,label,type])=>{
-      const wrap=el("div","qfield");
-      const lab=document.createElement("label"); lab.textContent=label; wrap.appendChild(lab);
+    const inputs = {};
+    g.fields.forEach(([k,label,type])=>{
+      const wrap = el("div","qfield");
+      const lab = document.createElement("label"); lab.textContent = label; wrap.appendChild(lab);
       let inp;
-      if(type==="textarea"){ inp=document.createElement("textarea"); }
-      else { inp=document.createElement("input"); inp.type="text"; }
-      inp.classList.add("kn"); inp.value=row[k]??""; inp.readOnly=true;
-      if(type==="textarea") inp.addEventListener("input",()=>autoGrow(inp));
-      inp.addEventListener("input",onContentInput);
-      inputs[k]=inp; wrap.appendChild(inp); body.appendChild(wrap);
+      if(type==="textarea"){ inp = document.createElement("textarea"); }
+      else { inp = document.createElement("input"); inp.type = "text"; }
+      inp.classList.add("kn"); inp.value = row[k]??""; inp.readOnly = true;
+      if(type==="textarea") inp.addEventListener("input", ()=>autoGrow(inp));
+      inp.addEventListener("input", onContentInput);
+      inputs[k] = inp; wrap.appendChild(inp); body.appendChild(wrap);
     });
-    collect=()=>{ const p={}; sch.fields.forEach(([k])=>p[k]=inputs[k].value); return p; };
-    isDirty=()=> sch.fields.some(([k])=> inputs[k].value !== origs[k]);
-    enterEditImpl=()=>{ body.classList.add("editing"); Object.values(inputs).forEach(i=>{ i.readOnly=false; }); const f=Object.values(inputs)[0]; if(f) f.focus(); };
+    collect = ()=>{ const p={}; g.fields.forEach(([k])=>p[k]=inputs[k].value); return p; };
+    isDirty = ()=> g.fields.some(([k])=> inputs[k].value !== origs[k]);
+    enterEditImpl = ()=>{ body.classList.add("editing"); Object.values(inputs).forEach(i=>{ i.readOnly = false; }); const f = Object.values(inputs)[0]; if(f) f.focus(); };
   }
 
   // QC comment — always editable
-  const cwrap=el("div","qfield");
-  const clab=document.createElement("label"); clab.textContent="QC comment (optional)"; cwrap.appendChild(clab);
-  const comment=document.createElement("textarea"); comment.classList.add("kn"); comment.value=row[HUMAN_COMMENT]??"";
-  comment.addEventListener("input",()=>autoGrow(comment));
+  const cwrap = el("div","qfield");
+  const clab = document.createElement("label"); clab.textContent = "QC comment (optional)"; cwrap.appendChild(clab);
+  const comment = document.createElement("textarea"); comment.classList.add("kn"); comment.value = row[HUMAN_COMMENT]??"";
+  comment.addEventListener("input", ()=>autoGrow(comment));
   cwrap.appendChild(comment); body.appendChild(cwrap);
   card.appendChild(body);
 
-  const foot=el("div","card-foot");
-  const approveBtn=mkBtn("Approved","btn pass");
-  const fixBtn=mkBtn("Need fixed","btn fix");
-  const rejectBtn=mkBtn("Rejected","btn fail");
-  const ignoreBtn=mkBtn("Ignored","btn ghost");
-  const note=span("save-note","");
-  const others=[approveBtn,rejectBtn,ignoreBtn];
-  const allBtns=[approveBtn,fixBtn,rejectBtn,ignoreBtn];
-  let editMode=false, edited=false;
+  const foot = el("div","card-foot");
+  const approveBtn = mkBtn("Approved","btn pass");
+  const fixBtn = mkBtn("Need fixed","btn fix");
+  const rejectBtn = mkBtn("Rejected","btn fail");
+  const ignoreBtn = mkBtn("Ignored","btn ghost");
+  const note = span("save-note","");
+  const others = [approveBtn, rejectBtn, ignoreBtn];
+  const allBtns = [approveBtn, fixBtn, rejectBtn, ignoreBtn];
+  let editMode = false, edited = false;
 
-  function enterEdit(){ editMode=true; enterEditImpl(); }
+  function enterEdit(){ editMode = true; enterEditImpl(); }
   function onContentInput(){
     if(!editMode || edited) return;
     if(isDirty()){
-      edited=true;
-      fixBtn.textContent="Edit Submit";
+      edited = true;
+      fixBtn.textContent = "Edit Submit";
       fixBtn.classList.remove("fix"); fixBtn.classList.add("primary");
-      others.forEach(b=>{ b.disabled=true; });   // grey out, not clickable
+      others.forEach(b=>{ b.disabled = true; });   // grey out, not clickable
     }
   }
 
-  approveBtn.onclick=()=>decide(true,"approved","Approved.");
-  rejectBtn.onclick=()=>decide(false,"rejected","Rejected.");
-  ignoreBtn.onclick=async()=>{ ignoreBtn.disabled=true; await logAction(sch,row,"ignored"); note.textContent="Ignored."; removeCard(card,sch); };
-  fixBtn.onclick=async()=>{
-    if(!editMode){ enterEdit(); return; }       // first click: open edit mode
-    if(!edited){ return; }                       // in edit mode, nothing changed yet
-    // edited → submit the correction
-    const patch=collect();
-    patch[HUMAN_STATUS]=true;                     // corrected & accepted
-    patch[HUMAN_COMMENT]=comment.value; patch[MEMBER_COL]=reviewerEmail;
-    if(await save(sch,row,patch,note,allBtns,"Fixed & saved.")){
-      await logAction(sch,row,"fixed");
-      removeCard(card,sch);
-    }
-  };
-  async function decide(status,action,okText){
-    const patch=collect();
-    patch[HUMAN_STATUS]=status; patch[HUMAN_COMMENT]=comment.value; patch[MEMBER_COL]=reviewerEmail;
-    if(await save(sch,row,patch,note,allBtns,okText)){
-      await logAction(sch,row,action);
-      removeCard(card,sch);
+  async function decide(statusValue, actionKey, okText){
+    const patch = collect();
+    patch[HUMAN_STATUS] = statusValue;
+    patch[HUMAN_COMMENT] = comment.value;
+    patch[MEMBER_COL] = reviewerEmail;
+    if(await save(sch, row, report, patch, note, allBtns, okText)){
+      await logAction(sch, row, actionKey);
+      removeCard(card, sch);
     }
   }
+  approveBtn.onclick = ()=> decide(STATUS.APPROVED, "approved", "Approved.");
+  rejectBtn.onclick  = ()=> decide(STATUS.REJECTED, "rejected", "Rejected.");
+  ignoreBtn.onclick  = ()=> decide(STATUS.IGNORED,  "ignored",  "Ignored.");
+  fixBtn.onclick = async ()=>{
+    if(!editMode){ enterEdit(); return; }   // first click opens edit mode
+    if(!edited)  { return; }                 // in edit mode but nothing changed yet
+    await decide(STATUS.FIXED, "fixed", "Fixed & saved.");
+  };
 
   foot.appendChild(approveBtn); foot.appendChild(fixBtn); foot.appendChild(rejectBtn); foot.appendChild(ignoreBtn);
   foot.appendChild(span("spacer","")); foot.appendChild(note);
@@ -626,76 +708,50 @@ function genCard(sch,row){
   return card;
 }
 
-/* ---------- REPORTED CARD ---------- */
-function repCard(sch,row){
-  const card=el("div","card");
-  const head=el("div","card-head");
-  head.appendChild(span("row-id", sch.pk+" · "+row[sch.pk]));
-  sch.context.forEach(([k,l])=>{ if(row[k]!=null&&row[k]!=="") head.appendChild(span("chip", l+": "+row[k])); });
-  card.appendChild(head);
-
-  const body=el("div","card-body");
-  const [ck,cl]=sch.complaint;
-  const comp=el("div","qfield complaint");
-  const compLab=document.createElement("label"); compLab.textContent=cl; comp.appendChild(compLab);
-  const compBox=el("div","ro kn"); compBox.textContent=row[ck]??""; comp.appendChild(compBox);
-  body.appendChild(comp);
-  sch.show.forEach(([k,l])=>{
-    if(row[k]==null||row[k]==="") return;
-    const w=el("div","qfield");
-    const lab=document.createElement("label"); lab.textContent=l; w.appendChild(lab);
-    const box=el("div","ro kn"); box.textContent=row[k]; w.appendChild(box);
-    body.appendChild(w);
-  });
-  card.appendChild(body);
-
-  const foot=el("div","card-foot");
-  const note=span("save-note","");
-  const dismissBtn=mkBtn("Dismiss report","btn");
-  let armed=false;
-  dismissBtn.onclick=async()=>{
-    if(!armed){ armed=true; dismissBtn.textContent="Confirm delete?"; dismissBtn.classList.add("fail");
-      setTimeout(()=>{ if(armed){armed=false;dismissBtn.textContent="Dismiss report";dismissBtn.classList.remove("fail");} },4000);
-      return; }
-    dismissBtn.disabled=true; note.textContent="Deleting…";
-    const { error } = await sb.from(sch.table).delete().eq(sch.pk,row[sch.pk]);
-    if(error){ dismissBtn.disabled=false; armed=false; note.textContent="Error: "+error.message; note.style.color="var(--fail)"; return; }
-    await logAction(sch,row,"dismissed");
-    removeCard(card,sch);
-  };
-  foot.appendChild(dismissBtn);
-  foot.appendChild(span("spacer","")); foot.appendChild(note);
-  card.appendChild(foot);
-  return card;
-}
-
 /* ---------- SAVE + LOG ---------- */
-async function save(sch,row,patch,note,btns,okText){
+async function save(sch, row, report, patch, note, btns, okText){
   btns.forEach(b=>b.disabled=true); note.textContent="Saving…"; note.style.color="var(--muted)";
-  const { data, error } = await sb.from(sch.table).update(patch).eq(sch.pk,row[sch.pk]).select(sch.pk);
-  btns.forEach(b=>b.disabled=false);
-  if(error){ note.textContent="Error: "+error.message; note.style.color="var(--fail)"; return false; }
+  const g = sch.gen;
+  const { data, error } = await sb.from(g.table).update(patch).eq(g.pk, row[g.pk]).select(g.pk);
+  if(error){
+    btns.forEach(b=>b.disabled=false);
+    note.textContent="Error: "+error.message; note.style.color="var(--fail)"; return false;
+  }
   if(!data || data.length===0){
-    note.textContent="Not saved — the update was blocked (no rows changed). Check the RLS UPDATE policy.";
+    btns.forEach(b=>b.disabled=false);
+    note.textContent="Not saved — the update was blocked (no rows changed). Check the RLS UPDATE policy on "+g.table+".";
     note.style.color="var(--fail)"; return false;
   }
+  // For a reported review, also mark the report row as QC'd so it doesn't come back
+  if(report && sch.reported){
+    const r = sch.reported;
+    const { error: e2 } = await sb.from(r.table).update({ [r.doneCol]: true }).eq(r.pk, report[r.pk]);
+    if(e2){
+      btns.forEach(b=>b.disabled=false);
+      note.textContent="Content saved, but couldn't mark the report done: "+e2.message;
+      note.style.color="var(--fail)"; return false;
+    }
+  }
+  btns.forEach(b=>b.disabled=false);
   note.textContent=okText||"Saved."; note.style.color="var(--pass)"; return true;
 }
-async function logAction(sch,row,action){
-  const [content_type,source]=activeKey.split(":");
+async function logAction(sch, row, action){
+  const g = sch.gen;
+  const [content_type, source] = activeKey.split(":");
   try{
     await sb.from("qc_actions").insert({
-      content_type, source, row_id: row[sch.pk], action, qc_member: reviewerEmail
+      content_type, source, row_id: row[g.pk], action, qc_member: reviewerEmail
     });
   }catch(e){ /* logging failure shouldn't block the reviewer */ }
 }
-function removeCard(card,sch){
+function removeCard(card, sch){
   card.style.transition="opacity .25s"; card.style.opacity="0";
-  setTimeout(()=>{ card.remove();
-    const left=$("list").querySelectorAll(".card").length;
-    $("count").textContent=left+(sch.kind==="generated"?" pending":" reports");
+  setTimeout(()=>{
+    card.remove();
+    const left = $("list").querySelectorAll(".card").length;
+    $("count").textContent = left + (sch.kind==="generated"?" pending":" reports");
     if(!left) $("list").innerHTML='<div class="empty">Nothing here. 🎉</div>';
-  },250);
+  }, 250);
 }
 
 /* ============================================================
