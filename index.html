@@ -60,6 +60,21 @@
   .choice.sel{border-color:var(--accent);background:var(--panel-2);box-shadow:inset 0 0 0 1px var(--accent);}
   .start-row{display:flex;gap:12px;margin-top:6px;}
 
+  /* subject multi-select */
+  .ms{position:relative;max-width:420px;}
+  .ms-btn{width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:11px 12px;font-size:14px;}
+  .ms-btn:hover{border-color:var(--accent);}
+  .ms-panel{position:absolute;z-index:30;top:calc(100% + 6px);left:0;right:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;box-shadow:0 12px 30px rgba(0,0,0,.4);}
+  .ms-search{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:14px;margin-bottom:8px;}
+  .ms-search:focus{outline:none;border-color:var(--accent);}
+  .ms-actions{display:flex;gap:8px;margin-bottom:8px;}
+  .ms-actions button{flex:1;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);border-radius:7px;padding:6px;font-size:12px;}
+  .ms-actions button:hover{border-color:var(--accent);color:var(--ink);}
+  .ms-list{max-height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;}
+  .ms-item{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:7px;cursor:pointer;font-family:"Noto Sans Kannada",var(--ui);font-size:14px;}
+  .ms-item:hover{background:var(--panel-2);}
+  .ms-item input{accent-color:var(--accent);width:16px;height:16px;}
+
   .toolbar{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--panel);}
   .count{font-size:13px;color:var(--muted);}
   .queue-name{font-weight:600;}
@@ -196,6 +211,21 @@
       </div>
     </div>
 
+    <div class="group">
+      <div class="glabel">Subject (optional)</div>
+      <div class="ms" id="subjectMs">
+        <button class="ms-btn" id="subjectBtn" type="button">All subjects ▾</button>
+        <div class="ms-panel hidden" id="subjectPanel">
+          <input class="ms-search" id="subjectSearch" placeholder="Search subject…" />
+          <div class="ms-actions">
+            <button type="button" id="subjAll">Select all</button>
+            <button type="button" id="subjClear">Clear</button>
+          </div>
+          <div class="ms-list" id="subjectList"></div>
+        </div>
+      </div>
+    </div>
+
     <div class="start-row">
       <button class="btn primary" id="startBtn" disabled>Start reviewing</button>
     </div>
@@ -250,10 +280,6 @@
       <h4 id="chartTitle">Daily decisions — last 30 days</h4>
       <div class="chart-box"><canvas id="trendChart"></canvas></div>
     </div>
-    <div class="split-grid">
-      <div class="split-card" id="byTypeCard"></div>
-      <div class="split-card" id="byMemberCard"></div>
-    </div>
   </div>
 </div>
 
@@ -261,15 +287,14 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 /* ====== CONFIGURE THESE TWO ====== */
-const SUPABASE_URL  = "https://blnnrlawwtygyrgugppr.supabase.co";
-const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJsbm5ybGF3d3R5Z3lyZ3VncHByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzNDQ1MjMsImV4cCI6MjA5MzkyMDUyM30.2EQqGeHbvFdgZkfHYbsbEvYYzJitGU8wX5vzJOHpIKU";
+const SUPABASE_URL  = "https://YOUR_PROJECT_REF.supabase.co";
+const SUPABASE_ANON = "YOUR_ANON_PUBLIC_KEY";
 /* ================================= */
-
 
 const SCHEMAS = {
   "mcq:generated": {
     label: "Generated MCQs · pending human QC",
-    table: "generated_mcqs", pk: "id", kind: "generated",
+    table: "generated_mcqs", pk: "id", kind: "generated", subjectCol: "subject",
     context: [["subject","Subject"],["chapter_name","Chapter"],["difficulty","Difficulty"]],
     fields: [
       ["mcq_question","Question (ಪ್ರಶ್ನೆ)","textarea"],
@@ -281,7 +306,7 @@ const SCHEMAS = {
   },
   "notes:generated": {
     label: "Generated Study Notes · pending human QC",
-    table: "generated_study_notes", pk: "id", kind: "generated", markdown: true,
+    table: "generated_study_notes", pk: "id", kind: "generated", markdown: true, subjectCol: "subject_name",
     context: [["subject_name","Subject"],["category","Category"]],
     fields: [
       ["topic_name","Topic (ವಿಷಯ)","text"],
@@ -290,7 +315,7 @@ const SCHEMAS = {
   },
   "mcq:reported": {
     label: "Reported Questions · user-flagged",
-    table: "reported_questions", pk: "id", kind: "reported",
+    table: "reported_questions", pk: "id", kind: "reported", subjectCol: null,
     context: [["question_id","Live Q id"],["user_email","Reported by"],["difficulty","Difficulty"]],
     complaint: ["user_comment","User's complaint"],
     show: [["mcq_question","Question"],["option1","Option 1"],["option2","Option 2"],
@@ -299,7 +324,7 @@ const SCHEMAS = {
   },
   "notes:reported": {
     label: "Reported Notes · user-flagged",
-    table: "reported_notes", pk: "id", kind: "reported",
+    table: "reported_notes", pk: "id", kind: "reported", subjectCol: "subject_name",
     context: [["note_id","Live note id"],["subject_name","Subject"],["user_email","Reported by"]],
     complaint: ["user_comment","User's complaint"],
     show: [["topic_name","Topic"],["explanation","Explanation"]],
@@ -390,6 +415,40 @@ $("dashFromApp").onclick=showDashboard;
 $("backFromDash").onclick=showMenu;
 $("dashRefresh").onclick=loadDashboard;
 
+/* ---------- SUBJECT MULTI-SELECT ---------- */
+const SUBJECTS = [
+  "ಪ್ರಚಲಿತ ಘಟನೆಗಳು","ಭಾರತೀಯ ಸಂವಿಧಾನ","ಜೀವಶಾಸ್ತ್ರ","ಭಾರತೀಯ ಇತಿಹಾಸ","ಭಾರತೀಯ ಭೂಗೋಳ",
+  "ಗಣಿತ","ರಸಾಯನಶಾಸ್ತ್ರ","ಭೌತಶಾಸ್ತ್ರ","ರಾಜಕೀಯ ಶಾಸ್ತ್ರ","ಮಾನಸಿಕ ಸಾಮರ್ಥ್ಯ",
+  "ಕರ್ನಾಟಕ ಇತಿಹಾಸ","ಭಾರತೀಯ ಆರ್ಥಿಕತೆ","ಕರ್ನಾಟಕ ಭೂಗೋಳ","ವಿಶ್ವ ಭೂಗೋಳ","ಕ್ರೀಡೆ ಮತ್ತು ಪ್ರಶಸ್ತಿಗಳು",
+  "ಜಾಗತಿಕ ಸಂಘಟನೆಗಳು","ಅಂತರಿಕ್ಷ ವಿಜ್ಞಾನ","ಪರಿಸರ ವಿಜ್ಞಾನ","ಕಂಪ್ಯೂಟರ್ ಜ್ಞಾನ","ಮಾಹಿತಿ ತಂತ್ರಜ್ಞಾನ",
+  "ವಿಶ್ವ ರಾಜಕೀಯ","ಪಂಚಾಯತ್ ರಾಜ್","ಮಾನವ ಹಕ್ಕುಗಳು","ಸಾಮಾನ್ಯ ವಿಜ್ಞಾನ","ಇಂಗ್ಲಿಷ್ ವ್ಯಾಕರಣ",
+  "ವಿಶ್ವ ಇತಿಹಾಸ","ಜಾಗತಿಕ ರಾಜಕಾರಣ","ವಿಶ್ವ ಆರ್ಥಿಕತೆ","ಕರ್ನಾಟಕ ಆರ್ಥಿಕತೆ","ಕನ್ನಡ ವ್ಯಾಕರಣ"
+];
+const selectedSubjects = new Set();
+(function buildSubjectDropdown(){
+  const listEl=$("subjectList");
+  SUBJECTS.forEach(name=>{
+    const lab=document.createElement("label"); lab.className="ms-item";
+    const cb=document.createElement("input"); cb.type="checkbox"; cb.value=name;
+    cb.addEventListener("change",()=>{ cb.checked?selectedSubjects.add(name):selectedSubjects.delete(name); updateSubjectLabel(); });
+    const txt=document.createElement("span"); txt.textContent=name;
+    lab.appendChild(cb); lab.appendChild(txt); listEl.appendChild(lab);
+  });
+  $("subjectBtn").onclick=(e)=>{ e.stopPropagation(); $("subjectPanel").classList.toggle("hidden"); };
+  $("subjectPanel").onclick=(e)=>e.stopPropagation();
+  document.addEventListener("click",()=>$("subjectPanel").classList.add("hidden"));
+  $("subjectSearch").addEventListener("input",(e)=>{
+    const term=e.target.value.trim().toLowerCase();
+    listEl.querySelectorAll(".ms-item").forEach(it=>{ it.style.display = it.textContent.toLowerCase().includes(term)?"flex":"none"; });
+  });
+  $("subjAll").onclick=()=>{ SUBJECTS.forEach(s=>selectedSubjects.add(s)); listEl.querySelectorAll("input").forEach(c=>c.checked=true); updateSubjectLabel(); };
+  $("subjClear").onclick=()=>{ selectedSubjects.clear(); listEl.querySelectorAll("input").forEach(c=>c.checked=false); updateSubjectLabel(); };
+})();
+function updateSubjectLabel(){
+  const n=selectedSubjects.size;
+  $("subjectBtn").textContent=(n===0?"All subjects":n===1?Array.from(selectedSubjects)[0]:n+" subjects selected")+" ▾";
+}
+
 /* ---------- LOAD QUEUE ---------- */
 async function loadList(){
   const sch=SCHEMAS[activeKey];
@@ -397,6 +456,8 @@ async function loadList(){
   const list=$("list"); list.innerHTML='<div class="loading">Loading…</div>'; $("count").textContent="";
   let q = sb.from(sch.table).select("*").order(sch.pk,{ascending:true}).limit(50);
   if(sch.kind==="generated") q = q.is(HUMAN_STATUS, null);
+  const subs=Array.from(selectedSubjects);
+  if(subs.length && sch.subjectCol) q = q.in(sch.subjectCol, subs);   // subject filter
   const { data, error } = await q;
   if(error){
     list.innerHTML='<div class="empty">Could not load: '+esc(error.message)+'<br><br>Likely an RLS read policy on '+esc(sch.table)+'.</div>';
@@ -701,8 +762,6 @@ function renderDashboard(){
 
   const blank=()=>({approved:0,fixed:0,rejected:0,ignored:0,dismissed:0});
   const today=blank(), week=blank(), range=blank();
-  const byType={ mcq:blank(), notes:blank() };
-  const byMember={};
   const daily={};
 
   typed.forEach(r=>{
@@ -712,15 +771,9 @@ function renderDashboard(){
     if(t>=weekAgo) week[a]++;
     if(t>=fromT && t<=toT){
       range[a]++;
-      const m=r.qc_member||"unknown"; (byMember[m]=byMember[m]||blank())[a]++;
       const k=dayKey(new Date(r.created_at));
       (daily[k]=daily[k]||{approved:0,fixed:0,rejected:0,ignored:0})[a] = (daily[k][a]||0) + (a==="dismissed"?0:1);
     }
-  });
-  allRows.forEach(r=>{
-    const t=new Date(r.created_at).getTime();
-    if(t<fromT || t>toT) return;
-    if(r.content_type in byType && (r.action in byType.mcq)) byType[r.content_type][r.action]++;
   });
 
   $("dashRange").textContent=sum(range)+" actions · "+typeLabel+" · "+rangeLabel;
@@ -731,19 +784,6 @@ function renderDashboard(){
   sg.appendChild(statCard("Today", today));
   sg.appendChild(statCard("Last 7 days", week));
   sg.appendChild(statCard("Selected range", range));
-
-  // by type (both, for comparison) within the selected range
-  const tc=$("byTypeCard"); tc.innerHTML="<h4>MCQs vs Notes · selected range</h4>";
-  ["mcq","notes"].forEach(ct=>{
-    const s=byType[ct]; const total=sum(s);
-    tc.appendChild(miniRow(ct==="mcq"?"MCQs":"Study Notes", `${total}  ·  ✓${s.approved} ⟳${s.fixed} ✗${s.rejected} –${s.ignored}`));
-  });
-
-  // by member within the selected range
-  const mc=$("byMemberCard"); mc.innerHTML="<h4>By reviewer · "+typeLabel+"</h4>";
-  const members=Object.entries(byMember).sort((a,b)=>(sum(b[1])-sum(a[1])));
-  if(!members.length) mc.appendChild(miniRow("—","no activity"));
-  members.forEach(([m,s])=> mc.appendChild(miniRow(m, `${sum(s)}  ·  ✓${s.approved} ⟳${s.fixed} ✗${s.rejected} –${s.ignored}`)));
 
   // chart: one bar per day across the selected range
   const labels=[], dApp=[], dFix=[], dRej=[], dIgn=[];
