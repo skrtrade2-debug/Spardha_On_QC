@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Spardha On · QC Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Kannada:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #14181d;
+    --panel: #1c2128;
+    --panel-2: #232a32;
+    --line: #2e3742;
+    --ink: #e7edf3;
+    --muted: #93a1b0;
+    --accent: #4f9d8f;       /* review teal */
+    --accent-ink: #0c1512;
+    --approve: #3fa66a;
+    --reject: #c4615a;
+    --warn: #d9a441;
+    --radius: 10px;
+    --kn: "Noto Sans Kannada", "Inter", system-ui, sans-serif;
+    --ui: "Inter", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--ui); font-size: 15px; line-height: 1.5;
+  }
+  button { font-family: var(--ui); cursor: pointer; }
+  input, textarea, select { font-family: var(--ui); }
+  .kn, textarea.kn, input.kn { font-family: var(--kn); }
+
+  /* ---------- Top bar ---------- */
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 20px; border-bottom: 1px solid var(--line);
+    background: var(--panel); position: sticky; top: 0; z-index: 10;
+  }
+  .brand { font-weight: 600; letter-spacing: .2px; }
+  .brand small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .spacer { flex: 1; }
+  .who { color: var(--muted); font-size: 13px; }
+  .btn {
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+    padding: 8px 14px; border-radius: 8px; font-size: 14px; font-weight: 500;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .btn.approve { background: var(--approve); color: #06140c; border-color: var(--approve); }
+  .btn.reject { background: transparent; color: var(--reject); border-color: var(--reject); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ---------- Auth ---------- */
+  .auth-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+  .auth {
+    width: 100%; max-width: 380px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: var(--radius); padding: 28px;
+  }
+  .auth h1 { font-size: 19px; margin: 0 0 4px; }
+  .auth p { color: var(--muted); margin: 0 0 22px; font-size: 14px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .5px; }
+  .field input {
+    width: 100%; padding: 11px 12px; border-radius: 8px; font-size: 15px;
+    background: var(--bg); border: 1px solid var(--line); color: var(--ink);
+  }
+  .field input:focus { outline: none; border-color: var(--accent); }
+  .auth .btn.primary { width: 100%; padding: 11px; }
+  .msg { font-size: 13px; margin-top: 12px; min-height: 18px; }
+  .msg.err { color: var(--reject); }
+  .msg.ok { color: var(--approve); }
+
+  /* ---------- Workspace ---------- */
+  .tabs { display: flex; gap: 6px; padding: 14px 20px 0; }
+  .tab {
+    padding: 8px 16px; border-radius: 8px 8px 0 0; border: 1px solid transparent;
+    color: var(--muted); background: transparent; font-size: 14px; font-weight: 500;
+  }
+  .tab.active { color: var(--ink); background: var(--panel); border-color: var(--line); border-bottom-color: var(--panel); }
+  .toolbar { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .count { font-size: 13px; color: var(--muted); }
+  .list { padding: 20px; display: grid; gap: 16px; max-width: 860px; margin: 0 auto; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .card-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel-2);
+  }
+  .pill { font-size: 11px; padding: 3px 9px; border-radius: 99px; font-weight: 600; letter-spacing: .3px; }
+  .pill.pending { background: rgba(217,164,65,.16); color: var(--warn); }
+  .row-id { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .card-body { padding: 16px; display: grid; gap: 14px; }
+  .qfield label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+  .qfield textarea, .qfield input {
+    width: 100%; background: var(--bg); border: 1px solid var(--line); color: var(--ink);
+    border-radius: 8px; padding: 10px 12px; font-size: 15px; resize: vertical;
+  }
+  .qfield textarea { min-height: 56px; line-height: 1.6; }
+  .qfield textarea:focus, .qfield input:focus { outline: none; border-color: var(--accent); }
+  .qfield.dirty textarea, .qfield.dirty input { border-color: var(--warn); }
+  .card-foot { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line); }
+  .card-foot .spacer { flex: 1; }
+  .save-note { font-size: 12px; color: var(--muted); }
+
+  .empty, .loading { text-align: center; color: var(--muted); padding: 60px 20px; }
+  .hidden { display: none !important; }
+  @media (max-width: 560px) { .list { padding: 14px; } .toolbar { flex-wrap: wrap; } }
+</style>
+</head>
+<body>
+
+<!-- ========== LOGIN ========== -->
+<div id="authView" class="auth-wrap">
+  <div class="auth">
+    <h1>QC Console</h1>
+    <p>Spardha On · content review</p>
+
+    <div id="stepEmail">
+      <div class="field">
+        <label for="email">Reviewer email</label>
+        <input id="email" type="email" autocomplete="email" placeholder="you@spardhaon.in" />
+      </div>
+      <button class="btn primary" id="sendBtn">Send code</button>
+      <div class="msg" id="emailMsg"></div>
+    </div>
+
+    <div id="stepCode" class="hidden">
+      <div class="field">
+        <label for="code">6-digit code</label>
+        <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" />
+      </div>
+      <button class="btn primary" id="verifyBtn">Verify &amp; sign in</button>
+      <div class="msg" id="codeMsg"></div>
+      <div class="msg"><a href="#" id="backLink" style="color:var(--muted)">Use a different email</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== WORKSPACE ========== -->
+<div id="appView" class="hidden">
+  <header>
+    <span class="brand">Spardha On <small>QC Console</small></span>
+    <span class="spacer"></span>
+    <span class="who" id="who"></span>
+    <button class="btn" id="signOut">Sign out</button>
+  </header>
+
+  <div class="tabs" id="tabs"></div>
+
+  <div class="toolbar">
+    <button class="btn" id="refreshBtn">Refresh</button>
+    <span class="count" id="count"></span>
+  </div>
+
+  <div class="list" id="list">
+    <div class="loading">Loading…</div>
+  </div>
+</div>
+
+<script type="module">
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+/* ============================================================
+   1) CONFIGURE THESE  ────────────────────────────────────────
+   ============================================================ */
+const SUPABASE_URL  = "https://YOUR_PROJECT_REF.supabase.co";
+const SUPABASE_ANON = "YOUR_ANON_PUBLIC_KEY";
+
+/* Describe each staging table the reviewer can edit.
+   Match column names to YOUR schema. Add/remove fields freely. */
+const SCHEMAS = {
+  mcqs: {
+    label: "MCQs",
+    table: "staging_mcqs",        // <- your MCQ staging table
+    pk: "id",
+    statusCol: "qc_status",       // <- column your final-QC trigger watches
+    pendingValue: "pending",      // rows in this state need human review
+    approvedValue: "approved",    // setting this lets your trigger promote it
+    rejectedValue: "rejected",
+    fields: [
+      { key: "question",       label: "Question (ಪ್ರಶ್ನೆ)", type: "textarea", kn: true },
+      { key: "option_a",       label: "Option A",  type: "text", kn: true },
+      { key: "option_b",       label: "Option B",  type: "text", kn: true },
+      { key: "option_c",       label: "Option C",  type: "text", kn: true },
+      { key: "option_d",       label: "Option D",  type: "text", kn: true },
+      { key: "correct_answer", label: "Correct answer", type: "text" },
+      { key: "explanation",    label: "Explanation (ವಿವರಣೆ)", type: "textarea", kn: true },
+    ],
+  },
+  notes: {
+    label: "Study notes",
+    table: "staging_notes",       // <- your notes staging table
+    pk: "id",
+    statusCol: "qc_status",
+    pendingValue: "pending",
+    approvedValue: "approved",
+    rejectedValue: "rejected",
+    fields: [
+      { key: "title",   label: "Title (ಶೀರ್ಷಿಕೆ)", type: "text", kn: true },
+      { key: "content", label: "Content (ವಿಷಯ)", type: "textarea", kn: true, big: true },
+    ],
+  },
+};
+/* ============================================================ */
+
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON, {
+  auth: { persistSession: true, autoRefreshToken: true },
+});
+
+// ---- element refs
+const $ = (id) => document.getElementById(id);
+const authView = $("authView"), appView = $("appView");
+const stepEmail = $("stepEmail"), stepCode = $("stepCode");
+const emailMsg = $("emailMsg"), codeMsg = $("codeMsg");
+
+let currentEmail = "";
+let activeKey = Object.keys(SCHEMAS)[0];
+
+// ---------- AUTH ----------
+$("sendBtn").onclick = async () => {
+  const email = $("email").value.trim().toLowerCase();
+  if (!email) { return setMsg(emailMsg, "Enter your email.", "err"); }
+  setMsg(emailMsg, "Sending…");
+  $("sendBtn").disabled = true;
+  const { error } = await sb.auth.signInWithOtp({
+    email,
+    options: { shouldCreateUser: false }, // only pre-registered reviewers
+  });
+  $("sendBtn").disabled = false;
+  if (error) return setMsg(emailMsg, error.message, "err");
+  currentEmail = email;
+  stepEmail.classList.add("hidden");
+  stepCode.classList.remove("hidden");
+  setMsg(codeMsg, "We emailed a 6-digit code to " + email, "ok");
+  $("code").focus();
+};
+
+$("verifyBtn").onclick = async () => {
+  const token = $("code").value.trim();
+  if (token.length < 6) return setMsg(codeMsg, "Enter the 6-digit code.", "err");
+  setMsg(codeMsg, "Verifying…");
+  $("verifyBtn").disabled = true;
+  const { error } = await sb.auth.verifyOtp({ email: currentEmail, token, type: "email" });
+  $("verifyBtn").disabled = false;
+  if (error) return setMsg(codeMsg, error.message, "err");
+  // session is set → onAuthStateChange will swap views
+};
+
+$("backLink").onclick = (e) => {
+  e.preventDefault();
+  stepCode.classList.add("hidden");
+  stepEmail.classList.remove("hidden");
+  setMsg(codeMsg, ""); setMsg(emailMsg, "");
+};
+
+$("signOut").onclick = async () => { await sb.auth.signOut(); };
+$("code").addEventListener("keydown", (e) => { if (e.key === "Enter") $("verifyBtn").click(); });
+$("email").addEventListener("keydown", (e) => { if (e.key === "Enter") $("sendBtn").click(); });
+
+function setMsg(el, text, kind) {
+  el.textContent = text || "";
+  el.className = "msg" + (kind ? " " + kind : "");
+}
+
+// React to session changes (login, logout, page reload with saved session)
+sb.auth.onAuthStateChange((_event, session) => {
+  if (session?.user) showApp(session.user); else showAuth();
+});
+// Initial check
+(async () => {
+  const { data } = await sb.auth.getSession();
+  if (data.session?.user) showApp(data.session.user); else showAuth();
+})();
+
+function showAuth() { appView.classList.add("hidden"); authView.classList.remove("hidden"); }
+function showApp(user) {
+  authView.classList.add("hidden"); appView.classList.remove("hidden");
+  $("who").textContent = user.email;
+  buildTabs(); loadList();
+}
+
+// ---------- TABS ----------
+function buildTabs() {
+  const tabs = $("tabs"); tabs.innerHTML = "";
+  for (const [key, sch] of Object.entries(SCHEMAS)) {
+    const b = document.createElement("button");
+    b.className = "tab" + (key === activeKey ? " active" : "");
+    b.textContent = sch.label;
+    b.onclick = () => { activeKey = key; buildTabs(); loadList(); };
+    tabs.appendChild(b);
+  }
+}
+
+$("refreshBtn").onclick = loadList;
+
+// ---------- LOAD PENDING ROWS ----------
+async function loadList() {
+  const sch = SCHEMAS[activeKey];
+  const list = $("list");
+  list.innerHTML = '<div class="loading">Loading…</div>';
+  const { data, error } = await sb
+    .from(sch.table)
+    .select("*")
+    .eq(sch.statusCol, sch.pendingValue)
+    .order(sch.pk, { ascending: true })
+    .limit(100);
+
+  if (error) {
+    list.innerHTML = '<div class="empty">Could not load rows: ' + escapeHtml(error.message) +
+      '<br><br>Check the table name and your RLS read policy.</div>';
+    $("count").textContent = "";
+    return;
+  }
+  $("count").textContent = data.length + " pending";
+  if (!data.length) {
+    list.innerHTML = '<div class="empty">Nothing pending here. 🎉</div>';
+    return;
+  }
+  list.innerHTML = "";
+  data.forEach((row) => list.appendChild(renderCard(sch, row)));
+}
+
+// ---------- RENDER ONE EDITABLE CARD ----------
+function renderCard(sch, row) {
+  const card = document.createElement("div");
+  card.className = "card";
+
+  const head = document.createElement("div");
+  head.className = "card-head";
+  head.innerHTML =
+    '<span class="pill pending">PENDING</span>' +
+    '<span class="row-id">' + sch.pk + " · " + escapeHtml(String(row[sch.pk])) + "</span>";
+  card.appendChild(head);
+
+  const body = document.createElement("div");
+  body.className = "card-body";
+  const inputs = {};
+
+  sch.fields.forEach((f) => {
+    const wrap = document.createElement("div");
+    wrap.className = "qfield";
+    const lab = document.createElement("label");
+    lab.textContent = f.label;
+    let inp;
+    if (f.type === "textarea") {
+      inp = document.createElement("textarea");
+      if (f.big) inp.style.minHeight = "160px";
+    } else {
+      inp = document.createElement("input");
+      inp.type = "text";
+    }
+    if (f.kn) inp.classList.add("kn");
+    inp.value = row[f.key] ?? "";
+    inp.addEventListener("input", () => {
+      const changed = inp.value !== (row[f.key] ?? "");
+      wrap.classList.toggle("dirty", changed);
+    });
+    inputs[f.key] = inp;
+    wrap.appendChild(lab); wrap.appendChild(inp);
+    body.appendChild(wrap);
+  });
+  card.appendChild(body);
+
+  const foot = document.createElement("div");
+  foot.className = "card-foot";
+  const saveBtn = mkBtn("Save edits", "btn");
+  const approveBtn = mkBtn("Approve", "btn approve");
+  const rejectBtn = mkBtn("Reject", "btn reject");
+  const note = document.createElement("span");
+  note.className = "save-note";
+
+  const collect = () => {
+    const patch = {};
+    sch.fields.forEach((f) => { patch[f.key] = inputs[f.key].value; });
+    return patch;
+  };
+
+  saveBtn.onclick = async () => {
+    await update(sch, row, collect(), note, [saveBtn, approveBtn, rejectBtn]);
+    Object.values(body.querySelectorAll(".qfield")).forEach(()=>{});
+    body.querySelectorAll(".qfield").forEach((q) => q.classList.remove("dirty"));
+  };
+  approveBtn.onclick = async () => {
+    const patch = collect();
+    patch[sch.statusCol] = sch.approvedValue;
+    if (await update(sch, row, patch, note, [saveBtn, approveBtn, rejectBtn], "Approved — promoting via trigger."))
+      removeCard(card);
+  };
+  rejectBtn.onclick = async () => {
+    const patch = collect();
+    patch[sch.statusCol] = sch.rejectedValue;
+    if (await update(sch, row, patch, note, [saveBtn, approveBtn, rejectBtn], "Rejected."))
+      removeCard(card);
+  };
+
+  foot.appendChild(saveBtn);
+  foot.appendChild(approveBtn);
+  foot.appendChild(rejectBtn);
+  const sp = document.createElement("span"); sp.className = "spacer"; foot.appendChild(sp);
+  foot.appendChild(note);
+  card.appendChild(foot);
+  return card;
+}
+
+async function update(sch, row, patch, note, btns, okText) {
+  btns.forEach((b) => (b.disabled = true));
+  note.textContent = "Saving…"; note.style.color = "var(--muted)";
+  const { error } = await sb.from(sch.table).update(patch).eq(sch.pk, row[sch.pk]);
+  btns.forEach((b) => (b.disabled = false));
+  if (error) {
+    note.textContent = "Error: " + error.message; note.style.color = "var(--reject)";
+    return false;
+  }
+  note.textContent = okText || "Saved."; note.style.color = "var(--approve)";
+  return true;
+}
+
+function removeCard(card) {
+  card.style.transition = "opacity .25s"; card.style.opacity = "0";
+  setTimeout(() => {
+    card.remove();
+    const left = $("list").querySelectorAll(".card").length;
+    $("count").textContent = left + " pending";
+    if (!left) $("list").innerHTML = '<div class="empty">Nothing pending here. 🎉</div>';
+  }, 250);
+}
+
+function mkBtn(text, cls) { const b = document.createElement("button"); b.className = cls; b.textContent = text; return b; }
+function escapeHtml(s) { return s.replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+</script>
+</body>
+</html>
