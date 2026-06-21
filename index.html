@@ -495,16 +495,25 @@ async function loadList(){
 
   if(sch.kind==="generated"){
     const g=sch.gen;
-    let q = sb.from(g.table).select("*")
-      .eq("final_qc_status", true)     // only final-QC-approved content
-      .is(HUMAN_STATUS, null)          // not yet human-reviewed
-      .order(g.pk,{ascending:true}).limit(50);
-    if(subs.length && g.subjectCol) q = q.in(g.subjectCol, subs);
+    const applyFilters=(qb)=>{
+      qb = qb.eq("final_qc_status", true).is(HUMAN_STATUS, null);
+      if(subs.length && g.subjectCol) qb = qb.in(g.subjectCol, subs);
+      return qb;
+    };
+    // pick a random window across ALL matching rows so reviewers get a mixed set
+    let offset=0;
+    try{
+      const head = await applyFilters(sb.from(g.table).select("id",{count:"exact",head:true}));
+      const total = head.count || 0;
+      if(total>50) offset = Math.floor(Math.random()*(total-50+1));
+    }catch(_){ offset=0; }
+    let q = applyFilters(sb.from(g.table).select("*")).order("id",{ascending:true}).range(offset, offset+49);
     const { data, error } = await q;
     if(error){
       list.innerHTML='<div class="empty">Could not load: '+esc(error.message)+'<br><br>Likely an RLS read policy on '+esc(g.table)+'.</div>';
       return;
     }
+    shuffle(data);                       // randomized order within the batch
     $("count").textContent=data.length+" pending";
     if(!data.length){ list.innerHTML='<div class="empty">Nothing here. 🎉</div>'; return; }
     list.innerHTML="";
@@ -543,6 +552,8 @@ async function loadList(){
   if(subs.length && g.subjectCol){
     pairs = pairs.filter(p=> subs.includes(p.source[g.subjectCol]));
   }
+  shuffle(pairs);                 // randomized order
+  pairs = pairs.slice(0, 50);     // cap the batch at 50
 
   $("count").textContent=pairs.length+" reports";
   if(!pairs.length){ list.innerHTML='<div class="empty">No reports match this filter.</div>'; return; }
@@ -556,6 +567,12 @@ async function loadList(){
 
 /* ---------- AUTO-GROW TEXTAREAS ---------- */
 function autoGrow(t){ t.style.height="auto"; t.style.height=(t.scrollHeight+2)+"px"; }
+
+/* ---------- SHUFFLE (Fisher-Yates) ---------- */
+function shuffle(arr){
+  for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; }
+  return arr;
+}
 
 /* ---------- MARKDOWN RENDERER (mirrors the app's TopicDetailScreen) ---------- */
 const MD_INLINE=/\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*(.+?)\*|_(.+?)_/g;
@@ -685,23 +702,31 @@ function buildCard(sch, row, report){
     }
   }
 
-  async function decide(statusValue, actionKey, okText){
+  async function commit({ statusValue, commentText, actionKey, okText, resetQc }){
     const patch = collect();
-    patch[HUMAN_STATUS] = statusValue;
-    patch[HUMAN_COMMENT] = comment.value;
-    patch[MEMBER_COL] = reviewerEmail;
+    patch[HUMAN_STATUS]  = statusValue;       // text label, or null to leave blank
+    patch[HUMAN_COMMENT] = commentText;
+    patch[MEMBER_COL]    = reviewerEmail;
+    if(resetQc){
+      // send the content back through the QC pipeline
+      patch.qc_status = null;
+      patch.qc_comment = null;
+      patch.final_qc_status = null;
+      patch.final_qc_comment = null;
+    }
     if(await save(sch, row, report, patch, note, allBtns, okText)){
       await logAction(sch, row, actionKey);
       removeCard(card, sch);
     }
   }
-  approveBtn.onclick = ()=> decide(STATUS.APPROVED, "approved", "Approved.");
-  rejectBtn.onclick  = ()=> decide(STATUS.REJECTED, "rejected", "Rejected.");
-  ignoreBtn.onclick  = ()=> decide(STATUS.IGNORED,  "ignored",  "Ignored.");
+  approveBtn.onclick = ()=> commit({ statusValue:STATUS.APPROVED, commentText:comment.value, actionKey:"approved", okText:"Approved." });
+  rejectBtn.onclick  = ()=> commit({ statusValue:STATUS.REJECTED, commentText:comment.value, actionKey:"rejected", okText:"Rejected." });
+  ignoreBtn.onclick  = ()=> commit({ statusValue:STATUS.IGNORED,  commentText:comment.value, actionKey:"ignored",  okText:"Ignored." });
   fixBtn.onclick = async ()=>{
     if(!editMode){ enterEdit(); return; }   // first click opens edit mode
     if(!edited)  { return; }                 // in edit mode but nothing changed yet
-    await decide(STATUS.FIXED, "fixed", "Fixed & saved.");
+    // Edit Submit: status stays blank, fixed comment, and reset the QC pipeline so it re-reviews
+    await commit({ statusValue:null, commentText:"Edited and Submitted", actionKey:"fixed", okText:"Edited & sent back to QC.", resetQc:true });
   };
 
   foot.appendChild(approveBtn); foot.appendChild(fixBtn); foot.appendChild(rejectBtn); foot.appendChild(ignoreBtn);
