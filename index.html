@@ -287,19 +287,28 @@
 <script type="module">
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-/* ====== CONFIGURE THESE TWO ======
-   IMPORTANT: put back YOUR real project values here (the same ones
-   your working console already used). Do NOT deploy the placeholders. */
 /* ====== CONFIGURE THESE TWO ====== */
 const SUPABASE_URL  = "https://blnnrlawwtygyrgugppr.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJsbm5ybGF3d3R5Z3lyZ3VncHByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzNDQ1MjMsImV4cCI6MjA5MzkyMDUyM30.2EQqGeHbvFdgZkfHYbsbEvYYzJitGU8wX5vzJOHpIKU";
 /* ================================= */
 
-/* ================================= */
 
-/* Name of the table that lists who is allowed into THIS console.
-   Each authorised reviewer should have a row with their email. */
-const REVIEWERS_TABLE = "qc_reviewers";
+/* ====== AUTHORISED REVIEWERS (edit this list) ======
+   Access to this console is gated entirely in the browser against this list —
+   NO Supabase changes are needed (no RPC, no RLS policy, no auth hook for QC).
+   Add or remove reviewers here (lowercase emails) and re-deploy this file.
+
+   Note: this list is visible in page source, and a browser check can be
+   bypassed by a determined user. That's acceptable here because the actual QC
+   *data* (generated_mcqs, generated_study_notes, reported_*, qc_actions) is
+   still protected server-side by your existing RLS policies. This list only
+   controls (a) who receives an OTP and (b) who sees the console UI. */
+const QC_REVIEWERS = [
+  "you@spardhaon.in",
+  // "reviewer2@example.com",
+  // "reviewer3@example.com",
+];
+const REVIEWER_SET = new Set(QC_REVIEWERS.map(e=>e.trim().toLowerCase()));
 
 // Shared generated-table configs (reused by the reported queues for editing)
 const GEN_MCQ = {
@@ -372,7 +381,16 @@ const VIEW_KEY = "qc:view";    // sessionStorage key for last view
 $("sendBtn").onclick = async () => {
   const email = $("email").value.trim().toLowerCase();
   if(!email) return setMsg(emailMsg,"Enter your email.","err");
-  setMsg(emailMsg,"Sending…"); $("sendBtn").disabled=true;
+  setMsg(emailMsg,"Checking…"); $("sendBtn").disabled=true;
+
+  // Pre-check BEFORE sending an OTP: only listed reviewers get a code.
+  const allowed = await isReviewerEmail(email);
+  if(!allowed){
+    $("sendBtn").disabled=false;
+    return setMsg(emailMsg,"This account is not authorized for QC access.","err");
+  }
+
+  setMsg(emailMsg,"Sending…");
   const { error } = await sb.auth.signInWithOtp({ email, options:{ shouldCreateUser:true }});
   $("sendBtn").disabled=false;
   if(error) return setMsg(emailMsg,error.message,"err");
@@ -397,37 +415,19 @@ function setMsg(el,t,k){el.textContent=t||"";el.className="msg"+(k?" "+k:"");}
 
 /* ---------- QC REVIEWER GATE ----------
    The global Supabase "Send Email" auth hook has been removed, so ANY email
-   (including app users) can now receive an OTP — that is what unblocks the
-   mobile app's signups. Access to THIS console is therefore enforced here
-   instead: after a successful login we check the qc_reviewers table and only
-   let through emails that are listed there.
+   (including app users) can receive an OTP — that is what unblocks the mobile
+   app's signups. Access to THIS console is enforced here in the browser,
+   against the QC_REVIEWERS list above. No Supabase-side rules are required for
+   the gate, since the QC data tables are already protected by your RLS. */
+function isReviewer(email){
+  return isReviewerEmail(email);
+}
 
-   This tries the security-definer RPC is_qc_reviewer() first (bypasses RLS),
-   and falls back to a direct read of qc_reviewers. For the fallback to work,
-   add this RLS policy in Supabase (SQL editor):
-
-     create policy "qc_reviewers self read"
-       on public.qc_reviewers for select to authenticated
-       using ( lower(email) = lower(auth.jwt() ->> 'email') );
-*/
-async function isReviewer(email){
+/* Pre-login check by email — purely against the hardcoded QC_REVIEWERS list,
+   so no OTP is ever sent to anyone who isn't on the list. No Supabase call. */
+function isReviewerEmail(email){
   if(!email) return false;
-  const lc = email.toLowerCase();
-  // 1) Preferred: the security-definer function you already use in RLS
-  try{
-    const { data, error } = await sb.rpc("is_qc_reviewer");
-    if(!error && typeof data === "boolean") return data;
-  }catch(_){ /* function may not be exposed; fall through */ }
-  // 2) Fallback: direct table read (needs the self-read policy above)
-  try{
-    const { data, error } = await sb
-      .from(REVIEWERS_TABLE)
-      .select("email")
-      .eq("email", lc)
-      .maybeSingle();
-    if(error){ console.warn("reviewer check failed:", error.message); return false; }
-    return !!data;
-  }catch(e){ console.warn("reviewer check error:", e); return false; }
+  return REVIEWER_SET.has(email.trim().toLowerCase());
 }
 
 // Token refresh / tab-focus events also fire SIGNED_IN; only navigate on the *first* sign-in,
