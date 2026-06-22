@@ -287,11 +287,19 @@
 <script type="module">
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+/* ====== CONFIGURE THESE TWO ======
+   IMPORTANT: put back YOUR real project values here (the same ones
+   your working console already used). Do NOT deploy the placeholders. */
 /* ====== CONFIGURE THESE TWO ====== */
 const SUPABASE_URL  = "https://blnnrlawwtygyrgugppr.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJsbm5ybGF3d3R5Z3lyZ3VncHByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzNDQ1MjMsImV4cCI6MjA5MzkyMDUyM30.2EQqGeHbvFdgZkfHYbsbEvYYzJitGU8wX5vzJOHpIKU";
 /* ================================= */
 
+/* ================================= */
+
+/* Name of the table that lists who is allowed into THIS console.
+   Each authorised reviewer should have a row with their email. */
+const REVIEWERS_TABLE = "qc_reviewers";
 
 // Shared generated-table configs (reused by the reported queues for editing)
 const GEN_MCQ = {
@@ -387,6 +395,41 @@ $("email").addEventListener("keydown",(e)=>{if(e.key==="Enter")$("sendBtn").clic
 $("code").addEventListener("keydown",(e)=>{if(e.key==="Enter")$("verifyBtn").click();});
 function setMsg(el,t,k){el.textContent=t||"";el.className="msg"+(k?" "+k:"");}
 
+/* ---------- QC REVIEWER GATE ----------
+   The global Supabase "Send Email" auth hook has been removed, so ANY email
+   (including app users) can now receive an OTP — that is what unblocks the
+   mobile app's signups. Access to THIS console is therefore enforced here
+   instead: after a successful login we check the qc_reviewers table and only
+   let through emails that are listed there.
+
+   This tries the security-definer RPC is_qc_reviewer() first (bypasses RLS),
+   and falls back to a direct read of qc_reviewers. For the fallback to work,
+   add this RLS policy in Supabase (SQL editor):
+
+     create policy "qc_reviewers self read"
+       on public.qc_reviewers for select to authenticated
+       using ( lower(email) = lower(auth.jwt() ->> 'email') );
+*/
+async function isReviewer(email){
+  if(!email) return false;
+  const lc = email.toLowerCase();
+  // 1) Preferred: the security-definer function you already use in RLS
+  try{
+    const { data, error } = await sb.rpc("is_qc_reviewer");
+    if(!error && typeof data === "boolean") return data;
+  }catch(_){ /* function may not be exposed; fall through */ }
+  // 2) Fallback: direct table read (needs the self-read policy above)
+  try{
+    const { data, error } = await sb
+      .from(REVIEWERS_TABLE)
+      .select("email")
+      .eq("email", lc)
+      .maybeSingle();
+    if(error){ console.warn("reviewer check failed:", error.message); return false; }
+    return !!data;
+  }catch(e){ console.warn("reviewer check error:", e); return false; }
+}
+
 // Token refresh / tab-focus events also fire SIGNED_IN; only navigate on the *first* sign-in,
 // so reviewers don't get bounced back to the menu when they switch tabs.
 sb.auth.onAuthStateChange((event, session)=>{
@@ -403,7 +446,25 @@ sb.auth.onAuthStateChange((event, session)=>{
 
 function hideAll(){[authView,menuView,appView,dashView].forEach(v=>v.classList.add("hidden"));}
 function showAuth(){hideAll();authView.classList.remove("hidden");}
-function onLogin(user){
+
+// Send a non-reviewer back to the login screen with a clear message.
+async function denyAccess(){
+  try{ sessionStorage.removeItem(VIEW_KEY); }catch(_){}
+  await sb.auth.signOut();                 // also triggers onAuthStateChange -> showAuth
+  signedInOnce=false;
+  showAuth();
+  $("stepCode").classList.add("hidden");
+  $("stepEmail").classList.remove("hidden");
+  $("email").value="";
+  setMsg(codeMsg,"");
+  setMsg(emailMsg,"This account is not authorised for QC access.","err");
+}
+
+async function onLogin(user){
+  // ---- gate: only listed QC reviewers may use this console ----
+  const allowed = await isReviewer(user.email);
+  if(!allowed){ await denyAccess(); return; }
+
   reviewerEmail=user.email;
   $("who").textContent=user.email; $("whoMenu").textContent=user.email; $("whoDash").textContent=user.email;
   // restore the queue the reviewer was in (if any), so reload/tab-switch keeps their place
@@ -721,7 +782,7 @@ function buildCard(sch, row, report){
   }
   approveBtn.onclick = ()=> commit({ statusValue:STATUS.APPROVED, commentText:comment.value, actionKey:"approved", okText:"Approved." });
   rejectBtn.onclick  = ()=> commit({ statusValue:STATUS.REJECTED, commentText:comment.value, actionKey:"rejected", okText:"Rejected." });
-  ignoreBtn.onclick  = ()=> commit({ statusValue:STATUS.IGNORED,  commentText:comment.value, actionKey:"ignored",  okText:"Ignored." });
+  ignoreBtn.onclick  = ()=> commit({ statusValue:null, commentText:"ignored", actionKey:"ignored", okText:"Ignored (status left blank)." });
   fixBtn.onclick = async ()=>{
     if(!editMode){ enterEdit(); return; }   // first click opens edit mode
     if(!edited)  { return; }                 // in edit mode but nothing changed yet
