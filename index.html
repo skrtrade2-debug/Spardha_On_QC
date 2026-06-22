@@ -48,7 +48,7 @@
   .msg{font-size:13px;margin-top:12px;min-height:18px;}
   .msg.err{color:var(--fail);} .msg.ok{color:var(--pass);}
 
-  .menu-wrap{max-width:640px;margin:40px auto;padding:0 20px;}
+  .menu-wrap{max-width:900px;margin:40px auto;padding:0 20px;}
   .menu-wrap h2{font-size:18px;margin:0 0 4px;}
   .menu-wrap .sub{color:var(--muted);font-size:14px;margin:0 0 26px;}
   .group{margin-bottom:24px;}
@@ -127,6 +127,23 @@
   .mini:first-of-type{border-top:none;}
   .mini b{font-variant-numeric:tabular-nums;}
 
+  /* pending Human QC panel on the menu */
+  .menu-grid{display:grid;grid-template-columns:260px 1fr;gap:26px;align-items:start;}
+  .pending-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;position:sticky;top:80px;}
+  .pending-head{display:flex;align-items:center;justify-content:space-between;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600;margin-bottom:6px;}
+  .pending-refresh{background:transparent;border:none;color:var(--muted);font-size:16px;line-height:1;padding:2px 4px;border-radius:6px;}
+  .pending-refresh:hover{color:var(--accent);}
+  .pending-list{display:flex;flex-direction:column;}
+  .pending-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;}
+  .pending-row .pl{font-size:13px;color:var(--muted);line-height:1.3;}
+  .pending-row .pv{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink);min-width:30px;text-align:right;}
+  .pending-row .pv.warn{color:var(--warn);}
+  .pending-row .pv.ca{color:var(--accent);}
+  .pending-row .pv.zero{color:var(--muted);opacity:.45;}
+  .pending-sep{height:1px;background:var(--line);margin:6px 0;}
+  .pending-grp{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);opacity:.7;margin:8px 0 2px;}
+  @media (max-width:760px){.menu-grid{grid-template-columns:1fr;}.pending-card{position:static;order:-1;}}
+
   .empty,.loading{text-align:center;color:var(--muted);padding:60px 20px;}
   .hidden{display:none!important;}
 
@@ -193,42 +210,66 @@
     <button class="btn" id="signOutMenu">Sign out</button>
   </header>
   <div class="menu-wrap">
-    <h2>What do you want to review?</h2>
-    <p class="sub">Pick a content type and a source, then start — or open the dashboard.</p>
+    <div class="menu-grid">
+      <aside class="pending-card">
+        <div class="pending-head">
+          <span>Pending · Human QC</span>
+          <button class="pending-refresh" id="pendingRefresh" title="Refresh counts">⟳</button>
+        </div>
+        <div class="pending-list">
+          <div class="pending-grp">Generated</div>
+          <div class="pending-row"><span class="pl">MCQs</span><span class="pv" id="pcGenMcq">–</span></div>
+          <div class="pending-row"><span class="pl">Study Notes</span><span class="pv" id="pcGenNotes">–</span></div>
+          <div class="pending-sep"></div>
+          <div class="pending-grp">Reported</div>
+          <div class="pending-row"><span class="pl">MCQs</span><span class="pv warn" id="pcRepMcq">–</span></div>
+          <div class="pending-row"><span class="pl">Notes</span><span class="pv warn" id="pcRepNotes">–</span></div>
+          <div class="pending-sep"></div>
+          <div class="pending-grp">Current Affairs · generated</div>
+          <div class="pending-row"><span class="pl">MCQs</span><span class="pv ca" id="pcCaMcq">–</span></div>
+          <div class="pending-row"><span class="pl">Notes</span><span class="pv ca" id="pcCaNotes">–</span></div>
+        </div>
+      </aside>
 
-    <div class="group">
-      <div class="glabel">Content</div>
-      <div class="choices">
-        <button class="choice" data-content="mcq"><b>MCQs</b><span>Questions &amp; answers</span></button>
-        <button class="choice" data-content="notes"><b>Study Notes</b><span>Topic explanations</span></button>
-      </div>
-    </div>
+      <div class="menu-main">
+        <h2>What do you want to review?</h2>
+        <p class="sub">Pick a content type and a source, then start — or open the dashboard.</p>
 
-    <div class="group">
-      <div class="glabel">Source</div>
-      <div class="choices">
-        <button class="choice" data-source="generated"><b>AI Generated</b><span>Pending human QC</span></button>
-        <button class="choice" data-source="reported"><b>User Reported</b><span>Flagged by app users</span></button>
-      </div>
-    </div>
-
-    <div class="group">
-      <div class="glabel">Subject (optional)</div>
-      <div class="ms" id="subjectMs">
-        <button class="ms-btn" id="subjectBtn" type="button">All subjects ▾</button>
-        <div class="ms-panel hidden" id="subjectPanel">
-          <input class="ms-search" id="subjectSearch" placeholder="Search subject…" />
-          <div class="ms-actions">
-            <button type="button" id="subjAll">Select all</button>
-            <button type="button" id="subjClear">Clear</button>
+        <div class="group">
+          <div class="glabel">Content</div>
+          <div class="choices">
+            <button class="choice" data-content="mcq"><b>MCQs</b><span>Questions &amp; answers</span></button>
+            <button class="choice" data-content="notes"><b>Study Notes</b><span>Topic explanations</span></button>
           </div>
-          <div class="ms-list" id="subjectList"></div>
+        </div>
+
+        <div class="group">
+          <div class="glabel">Source</div>
+          <div class="choices">
+            <button class="choice" data-source="generated"><b>AI Generated</b><span>Pending human QC</span></button>
+            <button class="choice" data-source="reported"><b>User Reported</b><span>Flagged by app users</span></button>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="glabel">Subject (optional)</div>
+          <div class="ms" id="subjectMs">
+            <button class="ms-btn" id="subjectBtn" type="button">All subjects ▾</button>
+            <div class="ms-panel hidden" id="subjectPanel">
+              <input class="ms-search" id="subjectSearch" placeholder="Search subject…" />
+              <div class="ms-actions">
+                <button type="button" id="subjAll">Select all</button>
+                <button type="button" id="subjClear">Clear</button>
+              </div>
+              <div class="ms-list" id="subjectList"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="start-row">
+          <button class="btn primary" id="startBtn" disabled>Start reviewing</button>
         </div>
       </div>
-    </div>
-
-    <div class="start-row">
-      <button class="btn primary" id="startBtn" disabled>Start reviewing</button>
     </div>
   </div>
 </div>
@@ -287,11 +328,12 @@
 <script type="module">
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-/* ====== CONFIGURE THESE TWO ====== */
+/* ====== CONFIGURE THESE TWO ======
+   IMPORTANT: put back YOUR real project values here (the same ones
+   your working console already used). Do NOT deploy the placeholders. */
 const SUPABASE_URL  = "https://blnnrlawwtygyrgugppr.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJsbm5ybGF3d3R5Z3lyZ3VncHByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzNDQ1MjMsImV4cCI6MjA5MzkyMDUyM30.2EQqGeHbvFdgZkfHYbsbEvYYzJitGU8wX5vzJOHpIKU";
 /* ================================= */
-
 
 /* ====== REVIEWER ACCESS ======
    Access to this console is controlled by your Supabase `qc_reviewers` table —
@@ -491,7 +533,49 @@ function showMenu(){
   try{ sessionStorage.removeItem(VIEW_KEY); }catch(_){}
   document.querySelectorAll(".choice").forEach(c=>c.classList.remove("sel"));
   $("startBtn").disabled=true;
+  loadPendingCounts();           // refresh the left-side Human-QC pending panel
 }
+
+/* ---------- PENDING HUMAN-QC COUNTS (left panel) ---------- */
+const CURRENT_AFFAIRS = "ಪ್ರಚಲಿತ ಘಟನೆಗಳು";   // current affairs subject name
+
+// A generated row is pending human QC when final_qc_status = true AND human_qc_status is blank.
+function qPendingGenerated(table){
+  return sb.from(table).select("id",{count:"exact",head:true})
+    .eq("final_qc_status", true).or(`${HUMAN_STATUS}.is.null,${HUMAN_STATUS}.eq.`);
+}
+// A reported row is pending when its done flag is null or false.
+function qPendingReported(table, doneCol){
+  return sb.from(table).select("id",{count:"exact",head:true})
+    .or(`${doneCol}.is.null,${doneCol}.eq.false`);
+}
+async function runCount(builder){
+  try{
+    const { count, error } = await builder;
+    if(error){ console.warn("count error:", error.message); return null; }
+    return count ?? 0;
+  }catch(e){ console.warn("count exception:", e); return null; }
+}
+
+async function loadPendingCounts(){
+  const jobs = {
+    pcGenMcq:   qPendingGenerated("generated_mcqs"),
+    pcGenNotes: qPendingGenerated("generated_study_notes"),
+    pcRepMcq:   qPendingReported("reported_questions","human_qc_done"),
+    pcRepNotes: qPendingReported("reported_notes","human_qc_done"),
+    pcCaMcq:    qPendingGenerated("generated_mcqs").eq("subject", CURRENT_AFFAIRS),
+    pcCaNotes:  qPendingGenerated("generated_study_notes").eq("subject_name", CURRENT_AFFAIRS),
+  };
+  // show a loading dash while fetching
+  Object.keys(jobs).forEach(id=>{ const el=$(id); if(el) el.textContent="…"; });
+  await Promise.all(Object.entries(jobs).map(async ([id, builder])=>{
+    const n = await runCount(builder);
+    const el = $(id); if(!el) return;
+    if(n===null){ el.textContent="–"; el.classList.remove("zero"); }
+    else { el.textContent=String(n); el.classList.toggle("zero", n===0); }
+  }));
+}
+$("pendingRefresh").onclick = loadPendingCounts;
 document.querySelectorAll(".choice").forEach(btn=>{
   btn.onclick=()=>{
     if(btn.dataset.content){ pick.content=btn.dataset.content; mark("content",btn); }
