@@ -304,7 +304,7 @@
   </header>
   <div class="dash-wrap">
     <div class="dash-controls">
-      <span class="dash-title">QC activity</span>
+      <span class="dash-title">My QC activity</span>
       <div class="seg" id="typeToggle">
         <button class="seg-btn active" data-type="all">All</button>
         <button class="seg-btn" data-type="mcq">MCQs</button>
@@ -978,6 +978,7 @@ async function loadDashboard(){
   const fetchFrom=new Date(Math.min(from.getTime(), last7.getTime()));
   const fetchTo  =new Date(Math.max(to.getTime(), Date.now()));
   const { data, error } = await sb.from("qc_actions").select("*")
+    .eq("qc_member", reviewerEmail)                 // only THIS reviewer's actions
     .gte("created_at", fetchFrom.toISOString())
     .lte("created_at", fetchTo.toISOString())
     .order("created_at",{ascending:true}).limit(20000);
