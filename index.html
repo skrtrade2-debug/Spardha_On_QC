@@ -170,6 +170,28 @@
   /* date range inputs */
   .dlabel{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:6px;}
   .dlabel input[type=date]{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:6px 9px;font-size:13px;color-scheme:dark;}
+
+  /* ---- upload source ---- */
+  .upload-wrap{max-width:760px;margin:30px auto;padding:0 20px;}
+  .upload-wrap h2{font-size:18px;margin:0 0 4px;}
+  .upload-wrap .sub{color:var(--muted);font-size:14px;margin:0 0 24px;}
+  .up-field{margin-bottom:18px;}
+  .up-field>label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;}
+  .up-field select,.up-field input{width:100%;max-width:420px;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:10px 12px;font-size:15px;}
+  .up-field select:focus,.up-field input:focus{outline:none;border-color:var(--accent);}
+  .up-field select{color-scheme:dark;}
+  .up-field input[type=date]{color-scheme:dark;}
+  .up-row{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;}
+  .up-row .up-field{flex:1;min-width:190px;margin-bottom:0;}
+  #sourceBoxes{display:grid;gap:14px;margin-top:6px;}
+  .src-box label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;}
+  .src-box textarea{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:10px 12px;font-size:15px;line-height:1.6;min-height:70px;overflow:hidden;resize:none;}
+  .src-box textarea:focus{outline:none;border-color:var(--accent);}
+  .src-box textarea.filled{border-color:var(--accent);}
+  .up-actions{display:flex;align-items:center;gap:12px;margin-top:24px;flex-wrap:wrap;}
+  .up-msg{font-size:13px;min-height:18px;}
+  .up-msg.err{color:var(--fail);} .up-msg.ok{color:var(--pass);}
+
   @media (max-width:640px){.choices{grid-template-columns:1fr;}.stat-grid{grid-template-columns:1fr;}.split-grid{grid-template-columns:1fr;}.list{padding:14px;}.toolbar{flex-wrap:wrap;}}
 </style>
 </head>
@@ -205,6 +227,7 @@
   <header>
     <span class="brand">Spardha On <small>QC Console</small></span>
     <button class="btn" id="openDashBtn">📊 Dashboard</button>
+    <button class="btn" id="openUploadBtn">⬆ Upload source</button>
     <span class="spacer"></span>
     <span class="who" id="whoMenu"></span>
     <button class="btn" id="signOutMenu">Sign out</button>
@@ -325,6 +348,47 @@
   </div>
 </div>
 
+<!-- ========== UPLOAD SOURCE ========== -->
+<div id="uploadView" class="hidden">
+  <header>
+    <span class="brand">Spardha On <small>QC Console</small></span>
+    <button class="btn" id="backFromUpload">← Back to menu</button>
+    <span class="spacer"></span>
+    <span class="who" id="whoUpload"></span>
+    <button class="btn" id="signOutUpload">Sign out</button>
+  </header>
+  <div class="upload-wrap">
+    <h2>Upload source material</h2>
+    <p class="sub">Pick a subject, set how many sources you're pasting, then paste each one into its own box. Each box is saved as a separate row in <code>manually_sourced</code>. Boxes grow automatically as you paste.</p>
+
+    <div class="up-row">
+      <div class="up-field">
+        <label for="upSubject">Subject</label>
+        <select id="upSubject" class="kn"><option value="">Select a subject…</option></select>
+      </div>
+      <div class="up-field">
+        <label for="upDate">Date (optional)</label>
+        <input type="date" id="upDate" />
+      </div>
+      <div class="up-field">
+        <label for="upCount">How many sources?</label>
+        <input type="number" id="upCount" min="1" max="20" value="1" />
+      </div>
+    </div>
+
+    <div class="up-field">
+      <label>Source content</label>
+      <div id="sourceBoxes"></div>
+    </div>
+
+    <div class="up-actions">
+      <button class="btn primary" id="upSubmit">Submit sources</button>
+      <button class="btn ghost" id="upClear">Clear all</button>
+      <span class="up-msg" id="upMsg"></span>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -403,7 +467,7 @@ const MEMBER_COL = "qc_member";
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth:{ persistSession:true, autoRefreshToken:true }});
 const $ = (id)=>document.getElementById(id);
-const authView=$("authView"), menuView=$("menuView"), appView=$("appView"), dashView=$("dashView");
+const authView=$("authView"), menuView=$("menuView"), appView=$("appView"), dashView=$("dashView"), uploadView=$("uploadView");
 const emailMsg=$("emailMsg"), codeMsg=$("codeMsg");
 
 let reviewerEmail = "";
@@ -447,7 +511,7 @@ $("verifyBtn").onclick = async () => {
 };
 $("backLink").onclick=(e)=>{e.preventDefault();$("stepCode").classList.add("hidden");$("stepEmail").classList.remove("hidden");setMsg(codeMsg,"");setMsg(emailMsg,"");};
 const doSignOut=async()=>{ try{ sessionStorage.removeItem(VIEW_KEY); }catch(_){} await sb.auth.signOut();};
-$("signOut").onclick=doSignOut; $("signOutMenu").onclick=doSignOut; $("signOutDash").onclick=doSignOut;
+$("signOut").onclick=doSignOut; $("signOutMenu").onclick=doSignOut; $("signOutDash").onclick=doSignOut; $("signOutUpload").onclick=doSignOut;
 $("email").addEventListener("keydown",(e)=>{if(e.key==="Enter")$("sendBtn").click();});
 $("code").addEventListener("keydown",(e)=>{if(e.key==="Enter")$("verifyBtn").click();});
 function setMsg(el,t,k){el.textContent=t||"";el.className="msg"+(k?" "+k:"");}
@@ -481,7 +545,7 @@ sb.auth.onAuthStateChange((event, session)=>{
   if(!session?.user){ signedInOnce=false; showAuth(); return; }
   // refresh displayed email regardless
   reviewerEmail=session.user.email;
-  $("who").textContent=session.user.email; $("whoMenu").textContent=session.user.email; $("whoDash").textContent=session.user.email;
+  $("who").textContent=session.user.email; $("whoMenu").textContent=session.user.email; $("whoDash").textContent=session.user.email; $("whoUpload").textContent=session.user.email;
   if(!signedInOnce){ signedInOnce=true; onLogin(session.user); }
 });
 (async()=>{
@@ -489,7 +553,7 @@ sb.auth.onAuthStateChange((event, session)=>{
   if(data.session?.user){ signedInOnce=true; onLogin(data.session.user); } else { showAuth(); }
 })();
 
-function hideAll(){[authView,menuView,appView,dashView].forEach(v=>v.classList.add("hidden"));}
+function hideAll(){[authView,menuView,appView,dashView,uploadView].forEach(v=>v.classList.add("hidden"));}
 function showAuth(){hideAll();authView.classList.remove("hidden");}
 
 // Send a non-reviewer back to the login screen with a clear message.
@@ -511,7 +575,7 @@ async function onLogin(user){
   if(!allowed){ await denyAccess(); return; }
 
   reviewerEmail=user.email;
-  $("who").textContent=user.email; $("whoMenu").textContent=user.email; $("whoDash").textContent=user.email;
+  $("who").textContent=user.email; $("whoMenu").textContent=user.email; $("whoDash").textContent=user.email; $("whoUpload").textContent=user.email;
   // restore the queue the reviewer was in (if any), so reload/tab-switch keeps their place
   let saved=null;
   try{ saved=JSON.parse(sessionStorage.getItem(VIEW_KEY)||"null"); }catch(_){}
@@ -599,6 +663,8 @@ $("openDashBtn").onclick=showDashboard;
 $("dashFromApp").onclick=showDashboard;
 $("backFromDash").onclick=showMenu;
 $("dashRefresh").onclick=loadDashboard;
+$("openUploadBtn").onclick=showUpload;
+$("backFromUpload").onclick=showMenu;
 
 /* ---------- SUBJECT MULTI-SELECT ---------- */
 const SUBJECTS = [
@@ -1075,6 +1141,88 @@ function drawChart(labels,app,fix,rej,ign){
     },
   });
 }
+
+/* ============================================================
+   UPLOAD SOURCE  →  manually_sourced
+   - subject from a single dropdown
+   - date optional
+   - "How many sources?" spins up that many auto-growing boxes
+   - submit inserts one row per non-empty box
+   ============================================================ */
+(function buildUploadSubjects(){
+  const sel=$("upSubject");
+  SUBJECTS.forEach(name=>{
+    const o=document.createElement("option");
+    o.value=name; o.textContent=name; o.className="kn";
+    sel.appendChild(o);
+  });
+})();
+
+function showUpload(){
+  hideAll(); uploadView.classList.remove("hidden");
+  if($("whoUpload")) $("whoUpload").textContent=reviewerEmail;
+  // make sure boxes exist for the current count
+  renderSourceBoxes(parseInt($("upCount").value,10)||1, /*keepText*/ true);
+  setUpMsg("");
+}
+
+function renderSourceBoxes(n, keepText){
+  n=Math.max(1, Math.min(20, n||1));
+  const wrap=$("sourceBoxes");
+  // preserve existing text by index when re-rendering
+  const existing = keepText
+    ? Array.from(wrap.querySelectorAll("textarea")).map(t=>t.value)
+    : [];
+  wrap.innerHTML="";
+  for(let i=0;i<n;i++){
+    const box=el("div","src-box");
+    const lab=document.createElement("label"); lab.textContent="Source "+(i+1); box.appendChild(lab);
+    const ta=document.createElement("textarea"); ta.classList.add("kn");
+    ta.placeholder="Paste source #"+(i+1)+" here…";
+    if(existing[i]!=null) ta.value=existing[i];
+    ta.addEventListener("input", ()=>{ autoGrow(ta); ta.classList.toggle("filled", ta.value.trim().length>0); });
+    box.appendChild(ta); wrap.appendChild(box);
+    autoGrow(ta); ta.classList.toggle("filled", ta.value.trim().length>0);
+  }
+}
+
+$("upCount").addEventListener("input",(e)=>{ renderSourceBoxes(parseInt(e.target.value,10), true); });
+$("upClear").onclick=()=>{
+  $("upSubject").value=""; $("upDate").value=""; $("upCount").value="1";
+  renderSourceBoxes(1, false); setUpMsg("");
+};
+function setUpMsg(t,k){ const m=$("upMsg"); m.textContent=t||""; m.className="up-msg"+(k?" "+k:""); }
+
+$("upSubmit").onclick=async ()=>{
+  const subject=$("upSubject").value;
+  const dateV=$("upDate").value;             // "" when not set
+  if(!subject) return setUpMsg("Pick a subject first.","err");
+
+  const texts=Array.from($("sourceBoxes").querySelectorAll("textarea"))
+    .map(t=>t.value.trim()).filter(t=>t.length>0);
+  if(!texts.length) return setUpMsg("Paste at least one source.","err");
+
+  const rows=texts.map(content=>({
+    subject,
+    source_date: dateV || null,            // optional date
+    content,
+    qc_member: reviewerEmail,
+  }));
+
+  setUpMsg("Saving "+rows.length+" source"+(rows.length>1?"s":"")+"…");
+  $("upSubmit").disabled=true;
+  // insert-only: no .select() read-back, since reviewers have no read access here
+  const { error } = await sb.from("manually_sourced").insert(rows);
+  $("upSubmit").disabled=false;
+
+  if(error){
+    return setUpMsg("Could not save: "+error.message+" — check the RLS INSERT policy on manually_sourced.","err");
+  }
+  const saved = rows.length;
+  setUpMsg("Saved "+saved+" source row"+(saved>1?"s":"")+". ✓","ok");
+  // reset the boxes (keep subject + date so a follow-up batch is quick)
+  renderSourceBoxes(parseInt($("upCount").value,10)||1, false);
+};
 
 function el(tag,cls){const e=document.createElement(tag);if(cls)e.className=cls;return e;}
 function span(cls,txt){const s=document.createElement("span");s.className=cls;s.textContent=txt;return s;}
