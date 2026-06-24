@@ -359,7 +359,7 @@
   </header>
   <div class="upload-wrap">
     <h2>Upload source material</h2>
-    <p class="sub">Pick a subject, set how many sources you're pasting, then paste each one into its own box. Each box is saved as a separate row in <code>manually_sourced</code>. Boxes grow automatically as you paste.</p>
+    <p class="sub">Pick a subject, set how many sources you're pasting, then paste each one into its own box. Boxes grow automatically as you paste.</p>
 
     <div class="up-row">
       <div class="up-field">
@@ -1216,7 +1216,7 @@ $("upSubmit").onclick=async ()=>{
   $("upSubmit").disabled=false;
 
   if(error){
-    return setUpMsg("Could not save: "+error.message+" — check the RLS INSERT policy on manually_sourced.","err");
+    return setUpMsg("Could not save. Please try again, or contact the admin if it keeps failing.","err");
   }
   const saved = rows.length;
   setUpMsg("Saved "+saved+" source row"+(saved>1?"s":"")+". ✓","ok");
